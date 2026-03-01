@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthProvider';
 import { DataProvider } from './context/DataProvider';
 import Layout from './components/Layout';
 import Login from './pages/Login';
+import Signup from './pages/Signup';
 
 // Lazy load pages for code splitting
 const StudentDashboard = lazy(() => import('./pages/StudentDashboard'));
@@ -31,6 +32,7 @@ function App() {
                     <Suspense fallback={<LoadingFallback />}>
                         <Routes>
                             <Route path="/" element={<Login />} />
+                            <Route path="/signup" element={<Signup />} />
 
                             <Route path="/portfolio/view/:id" element={<PortfolioView />} />
                             <Route element={<Layout />}>
