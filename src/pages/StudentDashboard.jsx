@@ -7,9 +7,13 @@ import { SuggestionEngine, OpportunityMatcher, ResumeGenerator, PortfolioDownloa
 
 const StudentDashboard = () => {
     const { user } = useAuth();
-    const { getStudentPortfolio } = useData();
+    const { getStudentPortfolio, loading } = useData();
     const portfolio = getStudentPortfolio(user?.id);
     const [activeTab, setActiveTab] = useState('overview');
+
+    if (loading) {
+        return <div className="text-white text-center py-16">Loading portfolio...</div>;
+    }
 
     const StatCard = ({ icon: Icon, label, value, color }) => (
         <div className="glass-card p-6 rounded-xl flex items-center justify-between">

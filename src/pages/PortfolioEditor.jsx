@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthProvider';
 import { useData } from '../context/DataProvider';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { User, Code, Briefcase, Award, Palette, Save, ArrowRight, Eye, ExternalLink } from 'lucide-react';
 import clsx from 'clsx';
 
 const PortfolioEditor = () => {
     const { user } = useAuth();
-    const { savePortfolio, getStudentPortfolio, templates } = useData();
+    const { savePortfolio, getStudentPortfolio, templates, loading } = useData();
     const navigate = useNavigate();
 
     const [activeTab, setActiveTab] = useState('about');
@@ -26,28 +26,51 @@ const PortfolioEditor = () => {
         }
     }, [user, getStudentPortfolio]);
 
-    const handleSave = () => {
-        savePortfolio(user.id, {
-            ...formData,
-            skills: Array.isArray(formData.skills) ? formData.skills : formData.skills.split(',').map(s => s.trim()).filter(Boolean)
-        });
-        alert('Portfolio saved successfully!');
+    const buildPortfolioPayload = () => ({
+        ...formData,
+        skills: Array.isArray(formData.skills) ? formData.skills : formData.skills.split(',').map(s => s.trim()).filter(Boolean)
+    });
+
+    const handleSave = async () => {
+        try {
+            await savePortfolio(user.id, buildPortfolioPayload());
+            alert('Portfolio saved successfully!');
+            return true;
+        } catch (error) {
+            console.error('Failed to save portfolio:', error);
+            const message = error?.message || 'Unknown error while saving portfolio.';
+            const hint =
+                message.includes('relation "portfolios" does not exist') ||
+                message.includes('no unique or exclusion constraint matching the ON CONFLICT')
+                    ? ' Run supabase/migrations/002_portfolios.sql in Supabase SQL Editor.'
+                    : '';
+            alert(`Failed to save portfolio: ${message}.${hint}`);
+            return false;
+        }
     };
 
-    const handlePreview = () => {
+    const handlePreview = async () => {
         // Save current draft before previewing
-        savePortfolio(user.id, {
-            ...formData,
-            skills: Array.isArray(formData.skills) ? formData.skills : formData.skills.split(',').map(s => s.trim()).filter(Boolean)
-        });
+        const saved = await handleSave();
+        if (!saved) return;
         // Open in new tab
         window.open(`/portfolio/view/${user.id}`, '_blank');
     };
 
-    const handlePublish = () => {
-        handleSave();
-        navigate('/student-dashboard');
+    const handlePublish = async () => {
+        const saved = await handleSave();
+        if (saved) {
+            navigate('/student-dashboard');
+        }
     };
+
+    if (loading) {
+        return <div className="text-white text-center py-16">Loading portfolio...</div>;
+    }
+
+    if (!user?.id) {
+        return <div className="text-red-400 text-center py-16">User not found. Please sign in again.</div>;
+    }
 
     const TabButton = ({ id, icon: Icon, label }) => (
         <button

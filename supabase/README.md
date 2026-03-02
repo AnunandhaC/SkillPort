@@ -1,6 +1,7 @@
 # Supabase Setup for SkillPort
 
-Account details (name, email, role, program) are stored in a `profiles` table. You must run the migration once in your Supabase project.
+Account details are stored in `profiles` and portfolio content is stored in `portfolios`.
+You must run migrations in order in your Supabase project.
 
 ## Steps
 
@@ -9,11 +10,15 @@ Account details (name, email, role, program) are stored in a `profiles` table. Y
 3. Go to **SQL Editor**
 4. Open `supabase/migrations/001_profiles.sql` and copy its contents
 5. Paste into the SQL Editor and click **Run**
+6. Open `supabase/migrations/002_portfolios.sql` and click **Run**
+7. If you see `record "new" has no field "updated_at"`, run `supabase/migrations/003_fix_portfolios_updated_at.sql`
+8. To allow admin to create faculty accounts from app UI, run `supabase/migrations/004_admin_create_faculty.sql`
 
 This will:
 - Create the `profiles` table
+- Create the `portfolios` table
 - Enable Row Level Security (RLS)
 - Add a trigger to auto-create a profile when users sign up
 - Backfill profiles for any existing users
 
-After running the migration, new signups will save to the database correctly.
+After running migrations, signups save to Supabase and portfolio edits persist in the `portfolios` table.
