@@ -5,6 +5,8 @@ import { DataProvider } from './context/DataProvider';
 import Layout from './components/Layout';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 
 // Lazy load pages for code splitting
 const StudentDashboard = lazy(() => import('./pages/StudentDashboard'));
@@ -33,6 +35,8 @@ function App() {
                         <Routes>
                             <Route path="/" element={<Login />} />
                             <Route path="/signup" element={<Signup />} />
+                            <Route path="/forgot-password" element={<ForgotPassword />} />
+                            <Route path="/reset-password" element={<ResetPassword />} />
 
                             <Route path="/portfolio/view/:id" element={<PortfolioView />} />
                             <Route element={<Layout />}>

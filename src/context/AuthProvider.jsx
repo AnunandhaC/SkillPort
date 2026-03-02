@@ -159,6 +159,13 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
+  // UPDATE PASSWORD (used after recovery link redirect)
+  const updatePassword = async (password) => {
+    const { data, error } = await supabase.auth.updateUser({ password });
+    if (error) throw error;
+    return data;
+  };
+
   const createFaculty = async ({ email, password, name }) => {
     if (user?.role !== 'admin') {
       throw new Error('Only admin can create faculty users.');
@@ -201,6 +208,7 @@ export const AuthProvider = ({ children }) => {
         signupStudent,
         createFaculty,
         resetPassword,
+        updatePassword,
         logout,
         loading,
       }}

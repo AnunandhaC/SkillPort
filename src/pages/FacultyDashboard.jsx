@@ -1,38 +1,77 @@
 import React, { useState } from 'react';
 import { useData } from '../context/DataProvider';
-import { User, Star, ExternalLink, MessageSquare, Save } from 'lucide-react';
+import { User, ExternalLink, Save } from 'lucide-react';
 
 const FacultyDashboard = () => {
-    const { getAllPortfolios, addReview, savePortfolio } = useData();
+    const { getAllPortfolios, addReview, savePortfolio, refreshPortfolios } = useData();
     const portfolios = getAllPortfolios();
     const [selectedStudent, setSelectedStudent] = useState(null);
     const [feedback, setFeedback] = useState('');
     const [score, setScore] = useState('');
+    const [submitting, setSubmitting] = useState(false);
+    const [submitError, setSubmitError] = useState('');
+    const [submitSuccess, setSubmitSuccess] = useState('');
+    const SAVE_TIMEOUT_MS = 15000;
+
+    const withTimeout = (promise, ms) =>
+        Promise.race([
+            promise,
+            new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('Saving evaluation timed out. Please check Supabase policies/migrations and try again.')), ms)
+            ),
+        ]);
 
     const handleSubmitReview = async (e) => {
         e.preventDefault();
-        if (!selectedStudent) return;
+        setSubmitError('');
+        setSubmitSuccess('');
 
-        // UC3: Store Feedback
-        addReview({
-            studentId: selectedStudent.studentId,
-            comments: feedback,
-            rating: score,
-            reviewer: 'Faculty'
-        });
-
-        // UC6: Assign Score (Updating the portfolio directly for simplicity)
-        try {
-            await savePortfolio(selectedStudent.studentId, {
-                ...selectedStudent,
-                score: score
-            });
-        } catch (error) {
-            alert(`Failed to save evaluation: ${error.message}`);
+        if (!selectedStudent) {
+            setSubmitError('Please select a student before submitting.');
             return;
         }
 
-        alert('Evaluation submitted successfully!');
+        const parsedScore = Number(score);
+        if (!Number.isFinite(parsedScore) || parsedScore < 0 || parsedScore > 100) {
+            setSubmitError('Score must be a number between 0 and 100.');
+            return;
+        }
+
+        if (!feedback.trim()) {
+            setSubmitError('Please enter constructive feedback.');
+            return;
+        }
+
+        try {
+            setSubmitting(true);
+
+            // UC3: Store Feedback
+            addReview({
+                studentId: selectedStudent.studentId,
+                comments: feedback.trim(),
+                rating: parsedScore,
+                reviewer: 'Faculty'
+            });
+
+            // UC6: Assign Score (Updating the portfolio directly for simplicity)
+            await withTimeout(savePortfolio(selectedStudent.studentId, {
+                ...selectedStudent,
+                score: parsedScore,
+                facultyFeedback: feedback.trim(),
+            }), SAVE_TIMEOUT_MS);
+            await refreshPortfolios();
+        } catch (error) {
+            const message = error?.message || 'Failed to save evaluation.';
+            const hint = message.includes('column "faculty_feedback" of relation "portfolios" does not exist')
+                ? ' Run supabase/migrations/007_add_faculty_feedback_to_portfolios.sql in Supabase SQL Editor.'
+                : '';
+            setSubmitError(`${message}.${hint}`);
+            return;
+        } finally {
+            setSubmitting(false);
+        }
+
+        setSubmitSuccess('Evaluation submitted successfully.');
         setFeedback('');
         setScore('');
         setSelectedStudent(null);
@@ -146,11 +185,14 @@ const FacultyDashboard = () => {
 
                                 <button
                                     type="submit"
-                                    className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg font-medium transition"
+                                    disabled={submitting}
+                                    className="flex items-center gap-2 bg-green-600 hover:bg-green-500 disabled:opacity-60 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium transition"
                                 >
                                     <Save size={18} />
-                                    Submit Evaluation
+                                    {submitting ? 'Submitting...' : 'Submit Evaluation'}
                                 </button>
+                                {submitError && <p className="text-sm text-red-400">{submitError}</p>}
+                                {submitSuccess && <p className="text-sm text-green-400">{submitSuccess}</p>}
                             </form>
                         </div>
                     )}

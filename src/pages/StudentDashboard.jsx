@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthProvider';
 import { useData } from '../context/DataProvider';
 import { Link } from 'react-router-dom';
-import { Plus, Edit3, Eye, FileText, TrendingUp, Award, ExternalLink, BarChart, Zap } from 'lucide-react';
+import { Plus, Edit3, FileText, TrendingUp, Award, ExternalLink } from 'lucide-react';
 import { SuggestionEngine, OpportunityMatcher, ResumeGenerator, PortfolioDownloader } from '../components/AnalysisTools';
 
 const StudentDashboard = () => {
@@ -101,9 +101,8 @@ const StudentDashboard = () => {
 
                     {activeTab === 'overview' && (
                         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                                 <StatCard icon={TrendingUp} label="Profile Score" value={portfolio.score || 'N/A'} color="green" />
-                                <StatCard icon={Eye} label="Views" value={Math.floor(Math.random() * 50)} color="blue" />
                                 <StatCard icon={Award} label="Achievements" value={portfolio.certifications?.length || 0} color="purple" />
                                 <StatCard icon={FileText} label="Projects" value={portfolio.projects?.length || 0} color="orange" />
                             </div>
@@ -118,6 +117,13 @@ const StudentDashboard = () => {
                                 <div className="glass-panel p-6 rounded-xl">
                                     <PortfolioDownloader portfolio={portfolio} />
                                 </div>
+                            </div>
+
+                            <div className="glass-panel p-6 rounded-xl">
+                                <h3 className="text-lg font-bold text-white mb-3">Faculty Suggestion</h3>
+                                <p className="text-slate-300 whitespace-pre-line">
+                                    {portfolio.facultyFeedback || 'No faculty suggestion yet.'}
+                                </p>
                             </div>
                         </div>
                     )}

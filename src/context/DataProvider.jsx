@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 const DataContext = createContext(null);
@@ -38,7 +38,8 @@ const INITIAL_OPPORTUNITIES = [
 const INITIAL_TEMPLATES = [
     { id: 'modern', name: 'Modern Minimal', description: 'Clean and whitespace heavy' },
     { id: 'creative', name: 'Creative Bold', description: 'Colorful and dynamic' },
-    { id: 'academic', name: 'Academic Professional', description: 'Structured and detailed' }
+    { id: 'academic', name: 'Academic Professional', description: 'Structured and detailed' },
+    { id: 'barch-red', name: 'BArch Red Studio', description: 'Red and white modern architecture portfolio' }
 ];
 
 export const DataProvider = ({ children }) => {
@@ -49,9 +50,41 @@ export const DataProvider = ({ children }) => {
     const [templates, setTemplates] = useState(INITIAL_TEMPLATES);
     const [users, setUsers] = useState([]); // Mock user registry for Admin
 
+    const loadPortfolios = useCallback(async () => {
+        try {
+            const { data, error } = await supabase
+                .from('portfolios')
+                .select('*')
+                .order('last_updated', { ascending: false });
+
+            if (error) throw error;
+
+            const mapped = {};
+            (data || []).forEach((row) => {
+                    mapped[row.student_id] = {
+                        studentId: row.student_id,
+                        about: row.about || '',
+                        skills: Array.isArray(row.skills) ? row.skills : [],
+                        projects: Array.isArray(row.projects) ? row.projects : [],
+                        certifications: Array.isArray(row.certifications) ? row.certifications : [],
+                        meta: row.meta && typeof row.meta === 'object' ? row.meta : {},
+                        templateId: row.template_id || 'modern',
+                        score: row.score ?? '',
+                        facultyFeedback: row.faculty_feedback || '',
+                        lastUpdated: row.last_updated || row.updated_at || new Date().toISOString(),
+                    };
+                });
+
+            setPortfolios(mapped);
+        } catch (error) {
+            console.error('Failed to load portfolios from Supabase:', error);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
     useEffect(() => {
         const storedReviews = localStorage.getItem('dps_reviews');
-        let alive = true;
 
         if (storedReviews) {
             try {
@@ -61,46 +94,21 @@ export const DataProvider = ({ children }) => {
             }
         }
 
-        const loadPortfolios = async () => {
-            try {
-                const { data, error } = await supabase
-                    .from('portfolios')
-                    .select('*')
-                    .order('last_updated', { ascending: false });
-
-                if (error) throw error;
-
-                const mapped = {};
-                (data || []).forEach((row) => {
-                    mapped[row.student_id] = {
-                        studentId: row.student_id,
-                        about: row.about || '',
-                        skills: Array.isArray(row.skills) ? row.skills : [],
-                        projects: Array.isArray(row.projects) ? row.projects : [],
-                        certifications: Array.isArray(row.certifications) ? row.certifications : [],
-                        templateId: row.template_id || 'modern',
-                        score: row.score ?? '',
-                        lastUpdated: row.last_updated || row.updated_at || new Date().toISOString(),
-                    };
-                });
-
-                if (alive) setPortfolios(mapped);
-            } catch (error) {
-                console.error('Failed to load portfolios from Supabase:', error);
-            } finally {
-                if (alive) setLoading(false);
-            }
-        };
-
         loadPortfolios();
 
+        // Keep dashboards in sync when another role updates portfolio scores/content.
+        const pollId = setInterval(() => {
+            loadPortfolios();
+        }, 10000);
+
         return () => {
-            alive = false;
+            clearInterval(pollId);
         };
-    }, []);
+    }, [loadPortfolios]);
 
     const savePortfolio = async (studentId, data) => {
         if (!studentId) throw new Error('Missing student id.');
+        const existing = portfolios[studentId] || {};
 
         const normalized = {
             studentId,
@@ -108,8 +116,13 @@ export const DataProvider = ({ children }) => {
             skills: Array.isArray(data?.skills) ? data.skills : [],
             projects: Array.isArray(data?.projects) ? data.projects : [],
             certifications: Array.isArray(data?.certifications) ? data.certifications : [],
+            meta: data?.meta && typeof data.meta === 'object' ? data.meta : {},
             templateId: data?.templateId || 'modern',
-            score: data?.score ?? '',
+            score: data?.score !== undefined ? data.score : (existing.score ?? ''),
+            facultyFeedback:
+                data?.facultyFeedback !== undefined
+                    ? data.facultyFeedback
+                    : (existing.facultyFeedback ?? ''),
             lastUpdated: new Date().toISOString(),
         };
 
@@ -118,8 +131,10 @@ export const DataProvider = ({ children }) => {
             skills: normalized.skills,
             projects: normalized.projects,
             certifications: normalized.certifications,
+            meta: normalized.meta,
             template_id: normalized.templateId,
             score: normalized.score === '' ? null : normalized.score,
+            faculty_feedback: normalized.facultyFeedback || '',
             last_updated: normalized.lastUpdated,
         };
 
@@ -180,6 +195,7 @@ export const DataProvider = ({ children }) => {
             templates,
             users,
             savePortfolio,
+            refreshPortfolios: loadPortfolios,
             addReview,
             getStudentPortfolio,
             getAllPortfolios,
