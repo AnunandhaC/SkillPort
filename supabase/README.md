@@ -13,6 +13,7 @@ You must run migrations in order in your Supabase project.
 6. Open `supabase/migrations/002_portfolios.sql` and click **Run**
 7. If you see `record "new" has no field "updated_at"`, run `supabase/migrations/003_fix_portfolios_updated_at.sql`
 8. To allow admin to create faculty accounts from app UI, run `supabase/migrations/004_admin_create_faculty.sql`
+9. To let faculty suggestions persist for students, run `supabase/migrations/007_add_faculty_feedback_to_portfolios.sql`
 
 This will:
 - Create the `profiles` table

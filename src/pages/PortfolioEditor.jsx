@@ -9,6 +9,7 @@ const PortfolioEditor = () => {
     const { user } = useAuth();
     const { savePortfolio, getStudentPortfolio, templates, loading } = useData();
     const navigate = useNavigate();
+    const isBArch = user?.program === 'barch';
 
     const [activeTab, setActiveTab] = useState('about');
     const [formData, setFormData] = useState({
@@ -16,22 +17,80 @@ const PortfolioEditor = () => {
         skills: '', // comma separated for simplicity in this MVP
         projects: [],
         certifications: [],
+        meta: {
+            fullName: '',
+            education: '',
+            experience: '',
+            contactEmail: '',
+            linkedinUrl: '',
+            heroImage: '',
+            profileImage: '',
+        },
         templateId: 'modern'
     });
 
     useEffect(() => {
         const existing = getStudentPortfolio(user?.id);
         if (existing) {
-            setFormData(existing);
+            setFormData({
+                ...existing,
+                meta: {
+                    fullName: existing?.meta?.fullName || user?.name || '',
+                    education: existing?.meta?.education || '',
+                    experience: existing?.meta?.experience || '',
+                    contactEmail: existing?.meta?.contactEmail || user?.email || '',
+                    linkedinUrl: existing?.meta?.linkedinUrl || '',
+                    heroImage: existing?.meta?.heroImage || '',
+                    profileImage: existing?.meta?.profileImage || '',
+                },
+                templateId: isBArch
+                    ? 'barch-red'
+                    : (existing.templateId && existing.templateId !== 'barch-red' ? existing.templateId : 'modern')
+            });
+        } else if (isBArch) {
+            setFormData((prev) => ({
+                ...prev,
+                meta: {
+                    ...prev.meta,
+                    fullName: user?.name || '',
+                    contactEmail: user?.email || '',
+                },
+                templateId: 'barch-red'
+            }));
         }
-    }, [user, getStudentPortfolio]);
+    }, [user, getStudentPortfolio, isBArch]);
 
     const buildPortfolioPayload = () => ({
         ...formData,
+        templateId: isBArch
+            ? 'barch-red'
+            : (formData.templateId === 'barch-red' ? 'modern' : formData.templateId),
+        meta: {
+            ...formData.meta,
+            fullName: formData?.meta?.fullName || user?.name || '',
+            contactEmail: formData?.meta?.contactEmail || user?.email || '',
+        },
         skills: Array.isArray(formData.skills) ? formData.skills : formData.skills.split(',').map(s => s.trim()).filter(Boolean)
     });
 
     const handleSave = async () => {
+        if (isBArch) {
+            const requiredFields = [
+                { key: 'fullName', label: 'Full Name' },
+                { key: 'education', label: 'Education' },
+                { key: 'experience', label: 'Experience' },
+                { key: 'contactEmail', label: 'Contact Email' },
+            ];
+            const missing = requiredFields
+                .filter((f) => !String(formData?.meta?.[f.key] || '').trim())
+                .map((f) => f.label);
+
+            if (missing.length > 0) {
+                alert(`Please complete required BArch details: ${missing.join(', ')}`);
+                return false;
+            }
+        }
+
         try {
             await savePortfolio(user.id, buildPortfolioPayload());
             alert('Portfolio saved successfully!');
@@ -43,6 +102,10 @@ const PortfolioEditor = () => {
                 message.includes('relation "portfolios" does not exist') ||
                 message.includes('no unique or exclusion constraint matching the ON CONFLICT')
                     ? ' Run supabase/migrations/002_portfolios.sql in Supabase SQL Editor.'
+                    : message.includes('column "meta" of relation "portfolios" does not exist')
+                        ? ' Run supabase/migrations/005_portfolios_meta.sql in Supabase SQL Editor.'
+                    : message.includes('column "faculty_feedback" of relation "portfolios" does not exist')
+                        ? ' Run supabase/migrations/007_add_faculty_feedback_to_portfolios.sql in Supabase SQL Editor.'
                     : '';
             alert(`Failed to save portfolio: ${message}.${hint}`);
             return false;
@@ -139,14 +202,88 @@ const PortfolioEditor = () => {
                 {activeTab === 'about' && (
                     <div className="space-y-6">
                         <h2 className="text-2xl font-bold text-white">Profile Information</h2>
+                        {isBArch && (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm text-slate-400 mb-2">Full Name *</label>
+                                    <input
+                                        type="text"
+                                        value={formData.meta?.fullName || ''}
+                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, fullName: e.target.value } })}
+                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                        placeholder="John Doe"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm text-slate-400 mb-2">Education *</label>
+                                    <input
+                                        type="text"
+                                        value={formData.meta?.education || ''}
+                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, education: e.target.value } })}
+                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                        placeholder="B.Arch, Harvard GSD (2015 - 2020)"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm text-slate-400 mb-2">Experience *</label>
+                                    <input
+                                        type="text"
+                                        value={formData.meta?.experience || ''}
+                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, experience: e.target.value } })}
+                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                        placeholder="5 years"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm text-slate-400 mb-2">Contact Email *</label>
+                                    <input
+                                        type="email"
+                                        value={formData.meta?.contactEmail || ''}
+                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, contactEmail: e.target.value } })}
+                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                        placeholder="contact@example.com"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm text-slate-400 mb-2">LinkedIn URL</label>
+                                    <input
+                                        type="url"
+                                        value={formData.meta?.linkedinUrl || ''}
+                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, linkedinUrl: e.target.value } })}
+                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                        placeholder="https://www.linkedin.com/in/username/"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm text-slate-400 mb-2">Hero Image URL</label>
+                                    <input
+                                        type="url"
+                                        value={formData.meta?.heroImage || ''}
+                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, heroImage: e.target.value } })}
+                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                        placeholder="https://..."
+                                    />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm text-slate-400 mb-2">Profile Image URL</label>
+                                    <input
+                                        type="url"
+                                        value={formData.meta?.profileImage || ''}
+                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, profileImage: e.target.value } })}
+                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
+                                        placeholder="https://..."
+                                    />
+                                </div>
+                            </div>
+                        )}
                         <div>
-                            <label className="block text-sm text-slate-400 mb-2">Professional Summary</label>
+                            <label className="block text-sm text-slate-400 mb-2">{isBArch ? 'About Me' : 'Professional Summary'}</label>
                             <textarea
                                 rows={6}
                                 value={formData.about}
                                 onChange={(e) => setFormData({ ...formData, about: e.target.value })}
                                 className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="I am a passionate developer..."
+                                placeholder={isBArch ? 'An architect who believes in sustainable and minimal design...' : 'I am a passionate developer...'}
                             />
                         </div>
                     </div>
@@ -175,7 +312,12 @@ const PortfolioEditor = () => {
                         <div className="flex justify-between items-center">
                             <h2 className="text-2xl font-bold text-white">Projects</h2>
                             <button
-                                onClick={() => setFormData({ ...formData, projects: [...formData.projects, { title: '', desc: '', tech: '' }] })}
+                                onClick={() =>
+                                    setFormData({
+                                        ...formData,
+                                        projects: [...formData.projects, { title: '', desc: '', tech: '', year: '', image: '' }]
+                                    })
+                                }
                                 className="text-sm bg-blue-600 px-3 py-1 rounded text-white"
                             >
                                 + Add Project
@@ -207,6 +349,30 @@ const PortfolioEditor = () => {
                                         }}
                                         className="w-full bg-transparent border-b border-slate-700 pb-2 text-slate-300 text-sm outline-none focus:border-blue-500"
                                     />
+                                    {isBArch && (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <input
+                                                placeholder="Year (e.g. 2023)"
+                                                value={proj.year || ''}
+                                                onChange={(e) => {
+                                                    const newProjs = [...formData.projects];
+                                                    newProjs[idx].year = e.target.value;
+                                                    setFormData({ ...formData, projects: newProjs });
+                                                }}
+                                                className="w-full bg-transparent border-b border-slate-700 pb-2 text-slate-300 text-sm outline-none focus:border-blue-500"
+                                            />
+                                            <input
+                                                placeholder="Project Image URL"
+                                                value={proj.image || ''}
+                                                onChange={(e) => {
+                                                    const newProjs = [...formData.projects];
+                                                    newProjs[idx].image = e.target.value;
+                                                    setFormData({ ...formData, projects: newProjs });
+                                                }}
+                                                className="w-full bg-transparent border-b border-slate-700 pb-2 text-slate-300 text-sm outline-none focus:border-blue-500"
+                                            />
+                                        </div>
+                                    )}
                                     <button
                                         onClick={() => {
                                             const newProjs = formData.projects.filter((_, i) => i !== idx);
@@ -226,16 +392,25 @@ const PortfolioEditor = () => {
                 {activeTab === 'design' && (
                     <div className="space-y-6">
                         <h2 className="text-2xl font-bold text-white">Choose Template</h2>
+                        {isBArch && (
+                            <div className="rounded-xl border border-red-400/40 bg-red-500/10 p-4 text-sm text-red-200">
+                                BArch accounts use the fixed <strong>BArch Red Studio</strong> portfolio template.
+                            </div>
+                        )}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {templates.map(t => (
+                            {(isBArch
+                                ? templates.filter((t) => t.id === 'barch-red')
+                                : templates.filter((t) => t.id !== 'barch-red')
+                            ).map(t => (
                                 <div
                                     key={t.id}
-                                    onClick={() => setFormData({ ...formData, templateId: t.id })}
+                                    onClick={() => !isBArch && setFormData({ ...formData, templateId: t.id })}
                                     className={clsx(
                                         'p-4 rounded-xl border cursor-pointer transition-all',
                                         formData.templateId === t.id
                                             ? 'bg-blue-600/20 border-blue-500 ring-2 ring-blue-500/50'
-                                            : 'bg-white/5 border-white/10 hover:bg-white/10'
+                                            : 'bg-white/5 border-white/10 hover:bg-white/10',
+                                        isBArch && 'cursor-default'
                                     )}
                                 >
                                     <h3 className="font-bold text-white">{t.name}</h3>
