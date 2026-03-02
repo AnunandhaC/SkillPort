@@ -1,18 +1,22 @@
 import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthProvider';
-import { LayoutDashboard, FileText, Settings, LogOut, User, Briefcase, FileCheck } from 'lucide-react';
+import { LayoutDashboard, FileText, Settings, LogOut, Briefcase, FileCheck } from 'lucide-react';
 import clsx from 'clsx';
 
 const Navbar = () => {
     const { user, logout } = useAuth();
-    const navigate = useNavigate();
 
     if (!user) return null;
 
-    const handleLogout = () => {
-        logout();
-        navigate('/');
+    const handleLogout = async () => {
+        try {
+            await logout();
+        } catch (error) {
+            console.error('Logout failed:', error);
+        } finally {
+            window.location.assign('/');
+        }
     };
 
     const NavItem = ({ to, icon: Icon, label }) => (

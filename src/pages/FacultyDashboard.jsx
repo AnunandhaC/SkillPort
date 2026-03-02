@@ -9,7 +9,7 @@ const FacultyDashboard = () => {
     const [feedback, setFeedback] = useState('');
     const [score, setScore] = useState('');
 
-    const handleSubmitReview = (e) => {
+    const handleSubmitReview = async (e) => {
         e.preventDefault();
         if (!selectedStudent) return;
 
@@ -22,10 +22,15 @@ const FacultyDashboard = () => {
         });
 
         // UC6: Assign Score (Updating the portfolio directly for simplicity)
-        savePortfolio(selectedStudent.studentId, {
-            ...selectedStudent,
-            score: score
-        });
+        try {
+            await savePortfolio(selectedStudent.studentId, {
+                ...selectedStudent,
+                score: score
+            });
+        } catch (error) {
+            alert(`Failed to save evaluation: ${error.message}`);
+            return;
+        }
 
         alert('Evaluation submitted successfully!');
         setFeedback('');

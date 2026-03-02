@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabaseClient';
 
 const DataContext = createContext(null);
 
@@ -43,31 +44,15 @@ const INITIAL_TEMPLATES = [
 export const DataProvider = ({ children }) => {
     const [portfolios, setPortfolios] = useState({});
     const [reviews, setReviews] = useState([]);
+    const [loading, setLoading] = useState(true);
     const [opportunities, setOpportunities] = useState(INITIAL_OPPORTUNITIES);
     const [templates, setTemplates] = useState(INITIAL_TEMPLATES);
     const [users, setUsers] = useState([]); // Mock user registry for Admin
 
     useEffect(() => {
-        const storedPortfolios = localStorage.getItem('dps_portfolios');
         const storedReviews = localStorage.getItem('dps_reviews');
+        let alive = true;
 
-        if (storedPortfolios) {
-            try {
-                const parsed = JSON.parse(storedPortfolios);
-                // Ensure all portfolios have studentId set
-                const updated = {};
-                Object.keys(parsed).forEach(studentId => {
-                    updated[studentId] = { ...parsed[studentId], studentId };
-                });
-                setPortfolios(updated);
-                // Update localStorage if we fixed any missing studentIds
-                if (JSON.stringify(parsed) !== JSON.stringify(updated)) {
-                    localStorage.setItem('dps_portfolios', JSON.stringify(updated));
-                }
-            } catch (e) {
-                console.error("Failed to parse portfolios", e);
-            }
-        }
         if (storedReviews) {
             try {
                 setReviews(JSON.parse(storedReviews));
@@ -75,12 +60,92 @@ export const DataProvider = ({ children }) => {
                 console.error("Failed to parse reviews", e);
             }
         }
+
+        const loadPortfolios = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('portfolios')
+                    .select('*')
+                    .order('last_updated', { ascending: false });
+
+                if (error) throw error;
+
+                const mapped = {};
+                (data || []).forEach((row) => {
+                    mapped[row.student_id] = {
+                        studentId: row.student_id,
+                        about: row.about || '',
+                        skills: Array.isArray(row.skills) ? row.skills : [],
+                        projects: Array.isArray(row.projects) ? row.projects : [],
+                        certifications: Array.isArray(row.certifications) ? row.certifications : [],
+                        templateId: row.template_id || 'modern',
+                        score: row.score ?? '',
+                        lastUpdated: row.last_updated || row.updated_at || new Date().toISOString(),
+                    };
+                });
+
+                if (alive) setPortfolios(mapped);
+            } catch (error) {
+                console.error('Failed to load portfolios from Supabase:', error);
+            } finally {
+                if (alive) setLoading(false);
+            }
+        };
+
+        loadPortfolios();
+
+        return () => {
+            alive = false;
+        };
     }, []);
 
-    const savePortfolio = (studentId, data) => {
-        const updated = { ...portfolios, [studentId]: { ...data, studentId, lastUpdated: new Date().toISOString() } };
-        setPortfolios(updated);
-        localStorage.setItem('dps_portfolios', JSON.stringify(updated));
+    const savePortfolio = async (studentId, data) => {
+        if (!studentId) throw new Error('Missing student id.');
+
+        const normalized = {
+            studentId,
+            about: data?.about || '',
+            skills: Array.isArray(data?.skills) ? data.skills : [],
+            projects: Array.isArray(data?.projects) ? data.projects : [],
+            certifications: Array.isArray(data?.certifications) ? data.certifications : [],
+            templateId: data?.templateId || 'modern',
+            score: data?.score ?? '',
+            lastUpdated: new Date().toISOString(),
+        };
+
+        const payload = {
+            about: normalized.about,
+            skills: normalized.skills,
+            projects: normalized.projects,
+            certifications: normalized.certifications,
+            template_id: normalized.templateId,
+            score: normalized.score === '' ? null : normalized.score,
+            last_updated: normalized.lastUpdated,
+        };
+
+        // Avoid relying on ON CONFLICT in case existing DB table missed unique constraint on student_id
+        const { data: updatedRows, error: updateError } = await supabase
+            .from('portfolios')
+            .update(payload)
+            .eq('student_id', normalized.studentId)
+            .select('student_id');
+
+        if (updateError) throw updateError;
+
+        if (!updatedRows || updatedRows.length === 0) {
+            const { error: insertError } = await supabase
+                .from('portfolios')
+                .insert({
+                    student_id: normalized.studentId,
+                    ...payload,
+                });
+            if (insertError) throw insertError;
+        }
+
+        setPortfolios((prev) => ({
+            ...prev,
+            [studentId]: normalized,
+        }));
     };
 
     const addReview = (review) => {
@@ -110,6 +175,7 @@ export const DataProvider = ({ children }) => {
         <DataContext.Provider value={{
             portfolios,
             reviews,
+            loading,
             opportunities,
             templates,
             users,

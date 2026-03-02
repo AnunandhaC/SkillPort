@@ -5,21 +5,36 @@ import { User, Mail, Lock, GraduationCap, Building2 } from 'lucide-react';
 import clsx from 'clsx';
 
 const Signup = () => {
-    const { login } = useAuth();
+    const { signupStudent } = useAuth();
     const navigate = useNavigate();
     const [program, setProgram] = useState(''); // 'barch' | 'btech'
     const [email, setEmail] = useState('');
     const [name, setName] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [error, setError] = useState('');
 
-    const handleSignup = (e) => {
+    const handleSignup = async (e) => {
         e.preventDefault();
-        if (!email || !name || !program) return;
-        if (password !== confirmPassword) return;
+        setError('');
 
-        login(email, 'student', name, program);
-        navigate('/student-dashboard');
+        if (!email || !name || !program) return;
+        if (!password) {
+            setError('Password is required.');
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            setError('Passwords do not match.');
+            return;
+        }
+
+        try {
+            await signupStudent({ email, password, name, program });
+            navigate('/', { replace: true });
+        } catch (signupError) {
+            setError(signupError.message || 'Failed to create account.');
+        }
     };
 
     const ProgramButton = ({ id, icon: Icon, label }) => (
@@ -48,7 +63,7 @@ const Signup = () => {
                     <h1 className="text-3xl font-bold text-center mb-2 text-white">Student Sign Up</h1>
                     <p className="text-center text-slate-400 mb-8">Create your student account</p>
 
-                    <form onSubmit={handleSignup} className="space-y-6">
+                    <form onSubmit={handleSignup} className="space-y-6" autoComplete="off">
                         <div>
                             <label className="block text-sm text-slate-400 mb-3">Program</label>
                             <div className="flex gap-3">
@@ -65,6 +80,8 @@ const Signup = () => {
                                     <input
                                         type="text"
                                         required
+                                        name="signup_full_name"
+                                        autoComplete="off"
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
                                         className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
@@ -80,6 +97,8 @@ const Signup = () => {
                                     <input
                                         type="email"
                                         required
+                                        name="signup_email"
+                                        autoComplete="off"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
                                         className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
@@ -94,6 +113,8 @@ const Signup = () => {
                                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                                     <input
                                         type="password"
+                                        name="signup_password"
+                                        autoComplete="new-password"
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
@@ -108,6 +129,8 @@ const Signup = () => {
                                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                                     <input
                                         type="password"
+                                        name="signup_confirm_password"
+                                        autoComplete="new-password"
                                         value={confirmPassword}
                                         onChange={(e) => setConfirmPassword(e.target.value)}
                                         className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
@@ -120,6 +143,7 @@ const Signup = () => {
                             </div>
                         </div>
 
+                        {error && <p className="text-sm text-red-400">{error}</p>}
                         <button
                             type="submit"
                             disabled={!program || password !== confirmPassword}
@@ -138,9 +162,6 @@ const Signup = () => {
                 </div>
             </div>
 
-            <p className="mt-8 text-slate-500 text-sm">
-                Prototype Mode: Password optional. Data persists in browser.
-            </p>
         </div>
     );
 };

@@ -2,10 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthProvider';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock } from 'lucide-react';
+import clsx from 'clsx';
 
 const Login = () => {
-  const { login, logout, user } = useAuth();
+  const { login, user } = useAuth();
   const navigate = useNavigate();
+  const [selectedRole, setSelectedRole] = useState('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -14,12 +16,25 @@ const Login = () => {
     e.preventDefault();
     setError('');
     try {
-      // clear any existing session so we really check this password
-      await logout();
-      await login(email, password);
-      // navigation happens after user is loaded in the effect below
+      const result = await login(email.trim(), password);
+      const role = result?.user?.user_metadata?.role || 'student';
+
+      if (role !== selectedRole) {
+        setError(`This account is registered as ${role}. Please choose ${role} sign in.`);
+        return;
+      }
+
+      if (role === 'student') navigate('/student-dashboard', { replace: true });
+      else if (role === 'faculty') navigate('/faculty-dashboard', { replace: true });
+      else if (role === 'admin') navigate('/admin-dashboard', { replace: true });
+      else navigate('/', { replace: true });
     } catch (err) {
-      setError(err.message || 'Failed to sign in');
+      const msg = err?.message || 'Failed to sign in';
+      if (msg.toLowerCase().includes('email not confirmed')) {
+        setError('Email confirmation is enabled in Supabase. Disable it in Authentication > Providers > Email > Confirm email.');
+      } else {
+        setError(msg);
+      }
     }
   };
 
@@ -35,7 +50,28 @@ const Login = () => {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
-      <form onSubmit={handleLogin} className="space-y-6">
+      <form onSubmit={handleLogin} className="space-y-6" autoComplete="off">
+        <div>
+          <label className="block text-sm text-slate-400 mb-2">Sign In As</label>
+          <div className="grid grid-cols-3 gap-2">
+            {['student', 'faculty', 'admin'].map((role) => (
+              <button
+                key={role}
+                type="button"
+                onClick={() => setSelectedRole(role)}
+                className={clsx(
+                  'rounded-lg border px-3 py-2 text-sm capitalize transition-all',
+                  selectedRole === role
+                    ? 'bg-blue-600 border-blue-500 text-white'
+                    : 'bg-slate-900/50 border-slate-700 text-slate-300 hover:bg-slate-800'
+                )}
+              >
+                {role}
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="space-y-4">
           <div>
             <label className="block text-sm text-slate-400 mb-1">Email Address</label>
@@ -44,6 +80,8 @@ const Login = () => {
               <input
                 type="email"
                 required
+                name="login_email"
+                autoComplete="off"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
@@ -59,6 +97,8 @@ const Login = () => {
               <input
                 type="password"
                 required
+                name="login_password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
@@ -86,12 +126,18 @@ const Login = () => {
         </button>
       </form>
 
-      <p className="mt-6 text-center text-slate-500 text-sm">
-        Don&apos;t have an account?{' '}
-        <Link to="/signup" className="text-blue-400 hover:text-blue-300 font-medium">
-          Sign up
-        </Link>
-      </p>
+      {selectedRole === 'student' ? (
+        <p className="mt-6 text-center text-slate-500 text-sm">
+          Don&apos;t have an account?{' '}
+          <Link to="/signup" className="text-blue-400 hover:text-blue-300 font-medium">
+            Sign up
+          </Link>
+        </p>
+      ) : (
+        <p className="mt-6 text-center text-slate-500 text-sm">
+          {selectedRole.charAt(0).toUpperCase() + selectedRole.slice(1)} accounts are created by admin.
+        </p>
+      )}
     </div>
   );
 };

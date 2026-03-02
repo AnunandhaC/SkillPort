@@ -1,21 +1,60 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useData } from '../context/DataProvider';
-import { Users, Layout, Trash2, Plus } from 'lucide-react';
+import { useAuth } from '../context/AuthProvider';
+import { supabase } from '../lib/supabaseClient';
+import { Users, Layout, Plus } from 'lucide-react';
 
 const AdminDashboard = () => {
     const { templates } = useData();
+    const { createFaculty } = useAuth();
     const [activeTab, setActiveTab] = useState('users');
+    const [users, setUsers] = useState([]);
+    const [loadingUsers, setLoadingUsers] = useState(true);
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+    const [facultyForm, setFacultyForm] = useState({
+        name: '',
+        email: '',
+        password: '',
+    });
 
-    // Hardcoded mock users for display (since AuthProvider only stores current user in localStorage)
-    const [mockUsers, setMockUsers] = useState([
-        { id: '1', name: 'John Student', role: 'student', email: 'john@edu.com' },
-        { id: '2', name: 'Jane Faculty', role: 'faculty', email: 'jane@edu.com' },
-        { id: '3', name: 'Admin User', role: 'admin', email: 'admin@edu.com' },
-    ]);
+    const loadUsers = async () => {
+        setLoadingUsers(true);
+        try {
+            const { data, error: listError } = await supabase
+                .from('profiles')
+                .select('id, full_name, email, role, created_at')
+                .order('created_at', { ascending: false });
+            if (listError) throw listError;
+            setUsers(data || []);
+        } catch (listError) {
+            setError(listError.message || 'Failed to load users.');
+        } finally {
+            setLoadingUsers(false);
+        }
+    };
 
-    const handleDeleteUser = (id) => {
-        if (window.confirm('Are you sure?')) {
-            setMockUsers(mockUsers.filter(u => u.id !== id));
+    useEffect(() => {
+        loadUsers();
+    }, []);
+
+    const handleCreateFaculty = async (e) => {
+        e.preventDefault();
+        setError('');
+        setSuccess('');
+
+        try {
+            await createFaculty({
+                name: facultyForm.name,
+                email: facultyForm.email,
+                password: facultyForm.password,
+            });
+
+            setSuccess('Faculty account created successfully.');
+            setFacultyForm({ name: '', email: '', password: '' });
+            await loadUsers();
+        } catch (createError) {
+            setError(createError.message || 'Failed to create faculty account.');
         }
     };
 
@@ -42,38 +81,84 @@ const AdminDashboard = () => {
             </div>
 
             {activeTab === 'users' && (
-                <div className="glass-panel rounded-xl overflow-hidden">
+                <div className="space-y-6">
+                    <div className="glass-panel rounded-xl p-6">
+                        <h2 className="text-xl font-bold text-white mb-4">Add New Faculty</h2>
+                        <form onSubmit={handleCreateFaculty} className="grid grid-cols-1 md:grid-cols-4 gap-3" autoComplete="off">
+                            <input
+                                type="text"
+                                required
+                                name="faculty_full_name"
+                                autoComplete="off"
+                                value={facultyForm.name}
+                                onChange={(e) => setFacultyForm({ ...facultyForm, name: e.target.value })}
+                                placeholder="Full Name"
+                                className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <input
+                                type="email"
+                                required
+                                name="faculty_email"
+                                autoComplete="off"
+                                value={facultyForm.email}
+                                onChange={(e) => setFacultyForm({ ...facultyForm, email: e.target.value })}
+                                placeholder="Email"
+                                className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <input
+                                type="password"
+                                required
+                                minLength={6}
+                                name="faculty_temp_password"
+                                autoComplete="new-password"
+                                value={facultyForm.password}
+                                onChange={(e) => setFacultyForm({ ...facultyForm, password: e.target.value })}
+                                placeholder="Temporary Password"
+                                className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <button
+                                type="submit"
+                                className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-4 py-2.5 font-medium transition"
+                            >
+                                Create Faculty
+                            </button>
+                        </form>
+                        {error && <p className="text-sm text-red-400 mt-3">{error}</p>}
+                        {success && <p className="text-sm text-green-400 mt-3">{success}</p>}
+                    </div>
+
+                    <div className="glass-panel rounded-xl overflow-hidden">
                     <table className="w-full text-left text-sm text-slate-400">
                         <thead className="bg-white/5 text-slate-200 font-bold uppercase text-xs">
                             <tr>
                                 <th className="px-6 py-4">Name</th>
                                 <th className="px-6 py-4">Role</th>
                                 <th className="px-6 py-4">Email</th>
-                                <th className="px-6 py-4">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                            {mockUsers.map(user => (
+                            {loadingUsers ? (
+                                <tr>
+                                    <td className="px-6 py-4 text-slate-400" colSpan={3}>Loading users...</td>
+                                </tr>
+                            ) : users.length === 0 ? (
+                                <tr>
+                                    <td className="px-6 py-4 text-slate-400" colSpan={3}>No users found.</td>
+                                </tr>
+                            ) : users.map(user => (
                                 <tr key={user.id} className="hover:bg-white/5 transition">
-                                    <td className="px-6 py-4 text-white font-medium">{user.name}</td>
+                                    <td className="px-6 py-4 text-white font-medium">{user.full_name || 'Unnamed'}</td>
                                     <td className="px-6 py-4 capitalize">
                                         <span className={`px-2 py-1 rounded text-xs ${user.role === 'admin' ? 'bg-purple-500/20 text-purple-400' : user.role === 'faculty' ? 'bg-orange-500/20 text-orange-400' : 'bg-blue-500/20 text-blue-400'}`}>
                                             {user.role}
                                         </span>
                                     </td>
                                     <td className="px-6 py-4">{user.email}</td>
-                                    <td className="px-6 py-4">
-                                        <button
-                                            onClick={() => handleDeleteUser(user.id)}
-                                            className="p-2 hover:bg-red-500/20 text-slate-500 hover:text-red-400 rounded transition"
-                                        >
-                                            <Trash2 size={16} />
-                                        </button>
-                                    </td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
+                </div>
                 </div>
             )}
 

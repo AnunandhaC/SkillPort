@@ -159,9 +159,38 @@ export const AuthProvider = ({ children }) => {
     return data;
   };
 
+  const createFaculty = async ({ email, password, name }) => {
+    if (user?.role !== 'admin') {
+      throw new Error('Only admin can create faculty users.');
+    }
+
+    const { data, error } = await supabase.rpc('admin_create_faculty', {
+      p_email: email?.trim(),
+      p_password: password,
+      p_full_name: name?.trim(),
+    });
+
+    if (error) throw error;
+    return data;
+  };
+
   const logout = async () => {
-    await supabase.auth.signOut();
     setUser(null);
+    setLoading(false);
+
+    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    if (error) {
+      console.error('Supabase signOut error:', error);
+    }
+
+    // Failsafe: clear any persisted Supabase auth tokens in this browser
+    if (typeof window !== 'undefined' && window.localStorage) {
+      Object.keys(window.localStorage).forEach((key) => {
+        if (key.startsWith('sb-') && key.endsWith('-auth-token')) {
+          window.localStorage.removeItem(key);
+        }
+      });
+    }
   };
 
   return (
@@ -170,6 +199,7 @@ export const AuthProvider = ({ children }) => {
         user,
         login,
         signupStudent,
+        createFaculty,
         resetPassword,
         logout,
         loading,

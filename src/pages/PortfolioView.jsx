@@ -5,9 +5,10 @@ import { Github, Linkedin, Mail, ExternalLink } from 'lucide-react';
 
 const PortfolioView = () => {
     const { id } = useParams();
-    const { getStudentPortfolio } = useData();
+    const { getStudentPortfolio, loading } = useData();
     const portfolio = getStudentPortfolio(id);
 
+    if (loading) return <div className="text-white text-center mt-20">Loading portfolio...</div>;
     if (!portfolio) return <div className="text-white text-center mt-20">Portfolio not found or not published.</div>;
 
     const { about, skills, projects, certifications, templateId } = portfolio;
