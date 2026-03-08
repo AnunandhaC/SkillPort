@@ -9,6 +9,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
     const { getStudentPortfolio, loading } = useData();
     let portfolio = portfolioOverride || getStudentPortfolio(id);
     const isEditable = Boolean(editable && typeof onPortfolioChange === 'function');
+    const [showGlobalEditDock, setShowGlobalEditDock] = useState(true);
 
     const isPreviewMode = (() => {
         if (portfolioOverride) return false;
@@ -195,6 +196,37 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         }));
     };
 
+    const updateWorkHighlightItem = (index, patch) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => {
+            const list = Array.isArray(prev?.meta?.workHighlights) ? [...prev.meta.workHighlights] : [];
+            list[index] = { ...(list[index] || {}), ...patch };
+            return { ...prev, meta: { ...(prev.meta || {}), workHighlights: list } };
+        });
+    };
+
+    const addWorkHighlightItem = (item = { title: 'New Highlight', text: 'Describe this work item.' }) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            meta: {
+                ...(prev.meta || {}),
+                workHighlights: [...(Array.isArray(prev?.meta?.workHighlights) ? prev.meta.workHighlights : []), item],
+            },
+        }));
+    };
+
+    const removeWorkHighlightItem = (index) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            meta: {
+                ...(prev.meta || {}),
+                workHighlights: (Array.isArray(prev?.meta?.workHighlights) ? prev.meta.workHighlights : []).filter((_, i) => i !== index),
+            },
+        }));
+    };
+
     const setSkillsList = (nextSkills) => {
         if (!isEditable) return;
         onPortfolioChange((prev) => ({ ...prev, skills: nextSkills }));
@@ -314,12 +346,19 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             return <Tag className={className}>{value || placeholder}</Tag>;
         }
 
+        const commit = (text) => onCommit(String(text || ''));
+
         return (
             <Tag
                 contentEditable
                 suppressContentEditableWarning
-                onInput={(e) => onCommit(e.currentTarget.textContent || '')}
-                onBlur={(e) => onCommit(e.currentTarget.textContent || '')}
+                onBlur={(e) => commit(e.currentTarget.textContent || '')}
+                onKeyDown={(e) => {
+                    if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape') {
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                    }
+                }}
                 className={`${className} outline-none rounded px-1 -mx-1 hover:bg-black/10`}
             >
                 {value || placeholder}
@@ -330,6 +369,138 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
     // Tiny "Made with" banner
     const Footer = () => (
         <>
+            {isEditable && !exportMode && (
+                <div className="fixed bottom-4 left-4 z-[60] w-[min(420px,calc(100vw-2rem))] rounded-xl border border-slate-300 bg-white/95 p-3 shadow-xl backdrop-blur">
+                    <div className="mb-2 flex items-center justify-between">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Quick Edit: Skills + Work</div>
+                        <button
+                            type="button"
+                            onClick={() => setShowGlobalEditDock((v) => !v)}
+                            className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
+                        >
+                            {showGlobalEditDock ? 'Hide' : 'Show'}
+                        </button>
+                    </div>
+
+                    {showGlobalEditDock && (
+                        <div className="max-h-[55vh] space-y-3 overflow-auto pr-1">
+                            <div className="space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-xs font-semibold text-slate-700">Skills</div>
+                                    <button
+                                        type="button"
+                                        onClick={() => addSkillItem('New Skill')}
+                                        className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white"
+                                    >
+                                        Add Skill
+                                    </button>
+                                </div>
+                                {(Array.isArray(skills) ? skills : []).map((s, i) => (
+                                    <div key={`dock-skill-${i}`} className="grid grid-cols-[1fr_auto] gap-2">
+                                        <input
+                                            type="text"
+                                            value={s || ''}
+                                            onChange={(e) => updateSkillItem(i, e.target.value)}
+                                            placeholder={`Skill ${i + 1}`}
+                                            className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => removeSkillItem(i)}
+                                            className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="space-y-2 border-t border-slate-200 pt-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-xs font-semibold text-slate-700">Work / Projects</div>
+                                    <button
+                                        type="button"
+                                        onClick={addProjectGlobal}
+                                        className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white"
+                                    >
+                                        Add Project
+                                    </button>
+                                </div>
+                                {(Array.isArray(projects) ? projects : []).map((p, i) => (
+                                    <div key={`dock-project-${i}`} className="space-y-1 rounded-md border border-slate-200 p-2">
+                                        <input
+                                            type="text"
+                                            value={p?.title || ''}
+                                            onChange={(e) => commitProject(i, 'title', e.target.value)}
+                                            placeholder="Project title"
+                                            className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={p?.desc || ''}
+                                            onChange={(e) => commitProject(i, 'desc', e.target.value)}
+                                            placeholder="Project description"
+                                            className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={p?.tech || ''}
+                                            onChange={(e) => commitProject(i, 'tech', e.target.value)}
+                                            placeholder="Tech/tools"
+                                            className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => removeProjectItem(i)}
+                                            className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                                        >
+                                            Remove Project
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="space-y-2 border-t border-slate-200 pt-3">
+                                <div className="flex items-center justify-between">
+                                    <div className="text-xs font-semibold text-slate-700">Work Descriptions</div>
+                                    <button
+                                        type="button"
+                                        onClick={() => addWorkHighlightItem()}
+                                        className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white"
+                                    >
+                                        Add Work Item
+                                    </button>
+                                </div>
+                                {(Array.isArray(portfolio?.meta?.workHighlights) ? portfolio.meta.workHighlights : []).map((item, i) => (
+                                    <div key={`dock-work-highlight-${i}`} className="space-y-1 rounded-md border border-slate-200 p-2">
+                                        <input
+                                            type="text"
+                                            value={item?.title || ''}
+                                            onChange={(e) => updateWorkHighlightItem(i, { title: e.target.value })}
+                                            placeholder="Work title"
+                                            className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                                        />
+                                        <textarea
+                                            value={item?.text || ''}
+                                            onChange={(e) => updateWorkHighlightItem(i, { text: e.target.value })}
+                                            placeholder="Work description"
+                                            rows={3}
+                                            className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => removeWorkHighlightItem(i)}
+                                            className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
+                                        >
+                                            Remove Work Item
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
             {!suppressTemplateCopies && <TemplateExtraPages />}
             {!hideFooterBadge && (
                 <div className="fixed bottom-4 right-4 bg-black/50 backdrop-blur text-white px-3 py-1 rounded-full text-xs">
@@ -340,7 +511,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
     );
 
     useEffect(() => {
-        if (!isEditable) return undefined;
+        if (!isEditable || exportMode) return undefined;
 
         const matches = {
             skills: /(skills?|expertise|tech stack|tools)/i,
@@ -404,7 +575,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                 if (heading) delete heading.dataset.dpsInlineAdd;
             });
         };
-    }, [isEditable, templateId, projects?.length, skills?.length, certifications?.length]);
+    }, [isEditable, exportMode, templateId, projects?.length, skills?.length, certifications?.length]);
 
     const getProjectImage = (p) => p?.image || p?.imageUrl || '';
     const ProjectAttachments = ({ p, dark = false, showImage = true }) => {
@@ -439,7 +610,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                 {templatePageCopies.map((pagePortfolio, i) => (
                     <section key={i} className="border-t border-white/10">
                         <div className="flex justify-end max-w-6xl mx-auto px-6 py-4">
-                            {isEditable && (
+                            {isEditable && !exportMode && (
                                 <button
                                     type="button"
                                     onClick={() => removeTemplatePageCopy(i)}
@@ -1270,6 +1441,11 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                 commitRoot={commitRoot}
                 commitMeta={commitMeta}
                 commitProject={commitProject}
+                updateSkillItem={updateSkillItem}
+                addSkillItem={addSkillItem}
+                removeSkillItem={removeSkillItem}
+                updateCertificationItem={updateCertificationItem}
+                isEditable={isEditable}
                 Footer={Footer}
             />
         );
@@ -2263,11 +2439,21 @@ const BtechMechClassicTemplate = ({
     commitRoot,
     commitMeta,
     commitProject,
+    updateSkillItem,
+    addSkillItem,
+    removeSkillItem,
+    updateCertificationItem,
+    isEditable = false,
     Footer,
 }) => {
     const meta = portfolio.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
     const fullName = meta.fullName || 'Mechanical Engineering Student';
     const role = meta.role || 'Mechanical Engineering Portfolio';
+    const greetingText = meta.greetingText || 'Hey there!';
+    const aboutHeading = meta.aboutHeading || 'ABOUT';
+    const workHeading = meta.workHeading || 'WORK';
+    const contactHeading = meta.contactHeading || 'CONTACT';
+    const contactLead = meta.contactLead || 'Feel free to contact me.';
     const contactEmail = meta.contactEmail || 'contact@example.com';
     const linkedinUrl = meta.linkedinUrl || '';
     const githubUrl = meta.githubUrl || '';
@@ -2325,19 +2511,22 @@ const BtechMechClassicTemplate = ({
         const match = raw.match(/^(.*?)(?:\s*[-:]\s*|\s+)(\d{1,3})%$/) || raw.match(/^(.*?)[( ](\d{1,3})%[)]?$/);
         const percent = Math.max(35, Math.min(100, Number(match?.[2] || [90, 80, 75, 70, 65, 60, 55, 50][idx % 8])));
         const label = String(match?.[1] || raw || `Skill ${idx + 1}`).trim();
-        return { label, percent, accent: idx % 2 === 0 ? '#7372dd' : '#b7b6fd' };
+        return { label, percent, sourceIndex: idx, accent: idx % 2 === 0 ? '#7372dd' : '#b7b6fd' };
     });
 
     const leftSkills = parsedSkills.filter((_, idx) => idx % 2 === 0);
     const rightSkills = parsedSkills.filter((_, idx) => idx % 2 === 1);
     const featuredProjects = (Array.isArray(projects) ? projects : []).slice(0, 3);
     const getProjectImage = (project) => project?.image || project?.imageUrl || '';
-    const workHighlights = [
+    const defaultWorkHighlights = [
         { title: 'Responsive', text: 'Layouts adapt cleanly across desktop, tablet, and mobile screens.' },
         { title: 'Precise', text: 'Design decisions focus on clarity, usability, and practical engineering communication.' },
         { title: 'Intuitive', text: 'Sections are structured to make technical work easy to scan and understand.' },
         { title: 'Dynamic', text: 'Project stories, visuals, and links bring the portfolio to life.' },
     ];
+    const workHighlights = Array.isArray(meta.workHighlights) && meta.workHighlights.length > 0
+        ? meta.workHighlights
+        : defaultWorkHighlights;
 
     return (
         <div className="min-h-screen bg-white text-slate-800">
@@ -2399,9 +2588,22 @@ const BtechMechClassicTemplate = ({
 
             <section id="home" className="px-6 pb-12 pt-24 text-center">
                 <div className="mx-auto max-w-5xl">
-                    <div className="font-['Lobster','cursive'] text-5xl text-slate-700 sm:text-6xl">Hey there!</div>
+                    <EditableText
+                        as="div"
+                        className="font-['Lobster','cursive'] text-5xl text-slate-700 sm:text-6xl"
+                        value={greetingText}
+                        placeholder="Hey there!"
+                        onCommit={(value) => commitMeta('greetingText', value)}
+                    />
                     <div className="mt-4 text-4xl font-semibold text-slate-700 sm:text-5xl">
-                        I am <span className="text-[#7372dd]">{fullName}</span>
+                        I am{' '}
+                        <EditableText
+                            as="span"
+                            className="text-[#7372dd]"
+                            value={fullName}
+                            placeholder="Your Name"
+                            onCommit={(value) => commitMeta('fullName', value)}
+                        />
                     </div>
                     <EditableText
                         as="p"
@@ -2422,7 +2624,13 @@ const BtechMechClassicTemplate = ({
 
             <section id="about" className="bg-slate-100 px-6 py-16">
                 <div className="mx-auto max-w-6xl">
-                    <h2 className="text-center text-4xl font-bold tracking-wide text-slate-700">ABOUT</h2>
+                    <EditableText
+                        as="h2"
+                        className="text-center text-4xl font-bold tracking-wide text-slate-700"
+                        value={aboutHeading}
+                        placeholder="ABOUT"
+                        onCommit={(value) => commitMeta('aboutHeading', value)}
+                    />
                     <div className="mx-auto mt-4 h-1 w-24 bg-slate-300" />
 
                     <div className="mt-12 grid gap-10 lg:grid-cols-[minmax(0,320px)_1fr]">
@@ -2436,6 +2644,15 @@ const BtechMechClassicTemplate = ({
                                     </div>
                                 )}
                             </div>
+                            {isEditable && (
+                                <input
+                                    type="text"
+                                    value={profileImage}
+                                    onChange={(e) => commitMeta('profileImage', e.target.value)}
+                                    placeholder="Profile image URL"
+                                    className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                                />
+                            )}
                             <h3 className="mt-6 text-2xl font-semibold text-slate-700">Who am I?</h3>
                             <EditableText
                                 as="p"
@@ -2454,8 +2671,23 @@ const BtechMechClassicTemplate = ({
                                         {column.length > 0 ? column.map((skillItem) => (
                                             <div key={`${skillItem.label}-${skillItem.percent}`} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
                                                 <div className="mb-2 flex items-center justify-between gap-4">
-                                                    <span className="font-semibold text-slate-700">{skillItem.label}</span>
-                                                    <span className="text-sm font-semibold text-slate-500">{skillItem.percent}%</span>
+                                                    <EditableText
+                                                        as="span"
+                                                        className="font-semibold text-slate-700"
+                                                        value={skillItem.label}
+                                                        placeholder={`Skill ${skillItem.sourceIndex + 1}`}
+                                                        onCommit={(value) => updateSkillItem(skillItem.sourceIndex, `${value} ${skillItem.percent}%`)}
+                                                    />
+                                                    <EditableText
+                                                        as="span"
+                                                        className="text-sm font-semibold text-slate-500"
+                                                        value={`${skillItem.percent}%`}
+                                                        placeholder="80%"
+                                                        onCommit={(value) => {
+                                                            const nextPercent = Math.max(35, Math.min(100, Number(String(value || '').replace(/[^\d]/g, '') || skillItem.percent)));
+                                                            updateSkillItem(skillItem.sourceIndex, `${skillItem.label} ${nextPercent}%`);
+                                                        }}
+                                                    />
                                                 </div>
                                                 <div className="h-3 overflow-hidden rounded-full bg-slate-200">
                                                     <div
@@ -2472,6 +2704,26 @@ const BtechMechClassicTemplate = ({
                                     </div>
                                 ))}
                             </div>
+                            {isEditable && (
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => addSkillItem('New Skill 80%')}
+                                        className="rounded-lg bg-[#7372dd] px-3 py-1 text-sm font-medium text-white"
+                                    >
+                                        Add skill
+                                    </button>
+                                    {Array.isArray(skills) && skills.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => removeSkillItem(Math.max(0, skills.length - 1))}
+                                            className="rounded-lg border border-slate-300 px-3 py-1 text-sm font-medium text-slate-600"
+                                        >
+                                            Remove last
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -2479,28 +2731,77 @@ const BtechMechClassicTemplate = ({
 
             <section id="work" className="px-6 py-16">
                 <div className="mx-auto max-w-6xl">
-                    <h2 className="text-center text-4xl font-bold tracking-wide text-slate-700">WORK</h2>
+                    <EditableText
+                        as="h2"
+                        className="text-center text-4xl font-bold tracking-wide text-slate-700"
+                        value={workHeading}
+                        placeholder="WORK"
+                        onCommit={(value) => commitMeta('workHeading', value)}
+                    />
                     <div className="mx-auto mt-4 h-1 w-24 bg-slate-300" />
 
                     <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-                        {workHighlights.map((item) => (
-                            <div key={item.title} className="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+                        {workHighlights.map((item, index) => (
+                            <div key={`${item.title || 'highlight'}-${index}`} className="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm">
                                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#7372dd]/10 text-2xl font-bold text-[#7372dd]">
-                                    {item.title.charAt(0)}
+                                    {String(item.title || 'H').charAt(0)}
                                 </div>
-                                <h3 className="mt-5 font-['Lobster','cursive'] text-3xl text-slate-700">{item.title}</h3>
-                                <p className="mt-3 leading-7 text-slate-600">{item.text}</p>
+                                <EditableText
+                                    as="h3"
+                                    className="mt-5 font-['Lobster','cursive'] text-3xl text-slate-700"
+                                    value={item.title}
+                                    placeholder={`Highlight ${index + 1}`}
+                                    onCommit={(value) => {
+                                        const next = [...workHighlights];
+                                        next[index] = { ...(next[index] || {}), title: value };
+                                        commitMeta('workHighlights', next);
+                                    }}
+                                />
+                                <EditableText
+                                    as="p"
+                                    className="mt-3 leading-7 text-slate-600"
+                                    value={item.text}
+                                    placeholder="Highlight description"
+                                    onCommit={(value) => {
+                                        const next = [...workHighlights];
+                                        next[index] = { ...(next[index] || {}), text: value };
+                                        commitMeta('workHighlights', next);
+                                    }}
+                                />
                             </div>
                         ))}
                     </div>
+                    {isEditable && (
+                        <div className="mt-4 flex flex-wrap justify-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => commitMeta('workHighlights', [...workHighlights, { title: 'New Highlight', text: 'Describe this highlight.' }])}
+                                className="rounded-lg bg-[#7372dd] px-3 py-1 text-sm font-medium text-white"
+                            >
+                                Add highlight
+                            </button>
+                            {workHighlights.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => commitMeta('workHighlights', workHighlights.slice(0, -1))}
+                                    className="rounded-lg border border-slate-300 px-3 py-1 text-sm font-medium text-slate-600"
+                                >
+                                    Remove last
+                                </button>
+                            )}
+                        </div>
+                    )}
 
                     <div className="mt-16">
                         <h3 className="text-center text-3xl font-semibold tracking-wide text-slate-700">PROJECT SHOWCASE</h3>
                         <div className="mx-auto mt-8 max-w-5xl text-justify leading-7 text-slate-600">
                             {(Array.isArray(projects) && projects.length > 0) ? (
-                                <p>
-                                    {projects[0]?.desc || 'Use this area to introduce your best mechanical engineering project, design system, lab build, or fabrication work.'}
-                                </p>
+                                <EditableText
+                                    as="p"
+                                    value={projects[0]?.desc}
+                                    placeholder="Use this area to introduce your best mechanical engineering project, design system, lab build, or fabrication work."
+                                    onCommit={(value) => commitProject(0, 'desc', value)}
+                                />
                             ) : (
                                 <p>Add projects in the editor to populate this showcase area.</p>
                             )}
@@ -2533,6 +2834,15 @@ const BtechMechClassicTemplate = ({
                                             placeholder="Describe this project."
                                             onCommit={(value) => commitProject(index, 'desc', value)}
                                         />
+                                        {isEditable && (
+                                            <input
+                                                type="text"
+                                                value={getProjectImage(project)}
+                                                onChange={(e) => commitProject(index, 'image', e.target.value)}
+                                                placeholder="Project image URL"
+                                                className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700"
+                                            />
+                                        )}
                                         <ProjectAttachments p={project} />
                                     </div>
                                 </article>
@@ -2550,9 +2860,47 @@ const BtechMechClassicTemplate = ({
 
             <section id="contact" className="bg-slate-100 px-6 py-16">
                 <div className="mx-auto max-w-5xl text-center">
-                    <h2 className="text-4xl font-bold tracking-wide text-slate-700">CONTACT</h2>
+                    <EditableText
+                        as="h2"
+                        className="text-4xl font-bold tracking-wide text-slate-700"
+                        value={contactHeading}
+                        placeholder="CONTACT"
+                        onCommit={(value) => commitMeta('contactHeading', value)}
+                    />
                     <div className="mx-auto mt-4 h-1 w-24 bg-slate-300" />
-                    <p className="mx-auto mt-6 max-w-2xl text-slate-600">Feel free to contact me.</p>
+                    <EditableText
+                        as="p"
+                        className="mx-auto mt-6 max-w-2xl text-slate-600"
+                        value={contactLead}
+                        placeholder="Feel free to contact me."
+                        onCommit={(value) => commitMeta('contactLead', value)}
+                    />
+
+                    {isEditable && (
+                        <div className="mx-auto mt-6 grid max-w-3xl gap-3 text-left sm:grid-cols-3">
+                            <input
+                                type="text"
+                                value={contactEmail}
+                                onChange={(e) => commitMeta('contactEmail', e.target.value)}
+                                placeholder="Email"
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                            />
+                            <input
+                                type="text"
+                                value={linkedinUrl}
+                                onChange={(e) => commitMeta('linkedinUrl', e.target.value)}
+                                placeholder="LinkedIn URL"
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                            />
+                            <input
+                                type="text"
+                                value={githubUrl}
+                                onChange={(e) => commitMeta('githubUrl', e.target.value)}
+                                placeholder="GitHub URL"
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                            />
+                        </div>
+                    )}
 
                     <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
                         <a
@@ -2560,7 +2908,12 @@ const BtechMechClassicTemplate = ({
                             className="inline-flex items-center gap-2 rounded-full bg-[#7372dd] px-5 py-3 text-sm font-semibold text-white hover:bg-[#6261d2]"
                         >
                             <Mail size={16} />
-                            <span>{contactEmail}</span>
+                            <EditableText
+                                as="span"
+                                value={contactEmail}
+                                placeholder="contact@example.com"
+                                onCommit={(value) => commitMeta('contactEmail', value)}
+                            />
                         </a>
                         {linkedinUrl && (
                             <a
@@ -2592,8 +2945,20 @@ const BtechMechClassicTemplate = ({
                             <div className="mt-5 space-y-3">
                                 {certifications.map((item, index) => (
                                     <div key={`${item.name || 'cert'}-${index}`} className="rounded-2xl border border-slate-200 px-4 py-3">
-                                        <div className="font-semibold text-slate-700">{item.name || `Certification ${index + 1}`}</div>
-                                        <div className="text-sm text-slate-500">{item.issuer || 'Issuer'}</div>
+                                        <EditableText
+                                            as="div"
+                                            className="font-semibold text-slate-700"
+                                            value={item.name}
+                                            placeholder={`Certification ${index + 1}`}
+                                            onCommit={(value) => updateCertificationItem(index, 'name', value)}
+                                        />
+                                        <EditableText
+                                            as="div"
+                                            className="text-sm text-slate-500"
+                                            value={item.issuer}
+                                            placeholder="Issuer"
+                                            onCommit={(value) => updateCertificationItem(index, 'issuer', value)}
+                                        />
                                     </div>
                                 ))}
                             </div>
