@@ -184,13 +184,36 @@ const PortfolioEditor = () => {
         }
 
         try {
+            const activeEl = document.activeElement;
+            if (
+                activeEl
+                && (
+                    activeEl.tagName === 'INPUT'
+                    || activeEl.tagName === 'TEXTAREA'
+                    || activeEl.isContentEditable
+                )
+                && typeof activeEl.blur === 'function'
+            ) {
+                activeEl.blur();
+            }
+
+            await Promise.resolve();
             setIsExportingTemplate(true);
             const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
                 import('html2canvas'),
                 import('jspdf'),
             ]);
 
+            // Allow blur commits + React state updates + export-mode repaint to fully settle.
             await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+            await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+            if (document?.fonts?.ready) {
+                try {
+                    await document.fonts.ready;
+                } catch {
+                    // ignore font readiness errors, continue export
+                }
+            }
 
             const canvas = await html2canvas(livePreviewRef.current, {
                 scale: Math.max(3, Math.ceil((window.devicePixelRatio || 1) * 2)),
@@ -500,8 +523,7 @@ const PortfolioEditor = () => {
                                             type="button"
                                             onClick={() => {
                                                 const demoId = `demo-${t.id}`;
-                                                const url = `${window.location.origin}/portfolio/view/${demoId}`;
-                                                window.open(url, '_blank');
+                                                navigate(`/portfolio/view/${demoId}`);
                                             }}
                                             className="px-3 py-1 rounded-lg border border-white/20 text-xs text-slate-200 hover:bg-white/10 transition"
                                         >
@@ -535,13 +557,13 @@ const PortfolioEditor = () => {
                             <div ref={livePreviewRef} className="rounded-xl overflow-hidden border border-white/10">
                                 <PortfolioView
                                     portfolioOverride={buildPortfolioPayload()}
-                                    editable
-                                    onPortfolioChange={setFormData}
+                                    editable={!isExportingTemplate}
+                                    onPortfolioChange={!isExportingTemplate ? setFormData : undefined}
                                     hideFooterBadge
                                     exportMode={isExportingTemplate}
                                 />
                             </div>
-                            <div className="flex flex-wrap gap-2">
+                            <div className="flex flex-wrap gap-2" data-export-hide="1">
                                 <button
                                     type="button"
                                     onClick={addTemplatePage}
@@ -558,7 +580,7 @@ const PortfolioEditor = () => {
                                 </button>
                             </div>
 
-                            <div className="rounded-xl border border-white/15 bg-black/20 p-4 space-y-4">
+                            <div className="rounded-xl border border-white/15 bg-black/20 p-4 space-y-4" data-export-hide="1">
                                 <h4 className="text-white font-semibold">Template Controls (All Templates)</h4>
                                 <p className="text-xs text-slate-400">Use this for templates where inline editing is limited. These controls also work for templates you add later.</p>
 
