@@ -11,6 +11,7 @@ import ResetPassword from './pages/ResetPassword';
 // Lazy load pages for code splitting
 const StudentDashboard = lazy(() => import('./pages/StudentDashboard'));
 const FacultyDashboard = lazy(() => import('./pages/FacultyDashboard'));
+const FacultyEvaluation = lazy(() => import('./pages/FacultyEvaluation'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const PortfolioEditor = lazy(() => import('./pages/PortfolioEditor'));
 const PortfolioView = lazy(() => import('./pages/PortfolioView'));
@@ -42,6 +43,7 @@ function App() {
                             <Route element={<Layout />}>
                                 <Route path="/student-dashboard" element={<StudentDashboard />} />
                                 <Route path="/faculty-dashboard" element={<FacultyDashboard />} />
+                                <Route path="/faculty-evaluation/:studentId" element={<FacultyEvaluation />} />
                                 <Route path="/admin-dashboard" element={<AdminDashboard />} />
                                 <Route path="/portfolio-editor" element={<PortfolioEditor />} />
                                 <Route path="/resume-builder" element={<ResumeBuilder />} />
