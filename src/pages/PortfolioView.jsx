@@ -1,23 +1,496 @@
-import React from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useLocation, useParams } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
+import { Github, Linkedin, Mail, Menu, X, ChevronUp } from 'lucide-react';
 
-const PortfolioView = () => {
+const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolioChange = null, hideFooterBadge = false, suppressTemplateCopies = false, exportMode = false }) => {
     const { id } = useParams();
+    const location = useLocation();
     const { getStudentPortfolio, loading } = useData();
-    const portfolio = getStudentPortfolio(id);
+    let portfolio = portfolioOverride || getStudentPortfolio(id);
+    const isEditable = Boolean(editable && typeof onPortfolioChange === 'function');
 
-    if (loading) return <div className="text-white text-center mt-20">Loading portfolio...</div>;
+    const isPreviewMode = (() => {
+        if (portfolioOverride) return false;
+        try {
+            return new URLSearchParams(location.search).get('preview') === '1';
+        } catch {
+            return false;
+        }
+    })();
+
+    if (isPreviewMode && id) {
+        try {
+            const cached = localStorage.getItem(`dps_preview_draft_${id}`);
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                if (parsed && typeof parsed === 'object') {
+                    portfolio = {
+                        ...portfolio,
+                        ...parsed,
+                        studentId: id,
+                    };
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to load preview draft:', e);
+        }
+    }
+
+    if (!portfolioOverride && loading) return <div className="text-white text-center mt-20">Loading portfolio...</div>;
     if (!portfolio) return <div className="text-white text-center mt-20">Portfolio not found or not published.</div>;
 
     const { about, skills, projects, certifications, templateId } = portfolio;
+    const globalMeta = portfolio?.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
+    const sectionVisibility = {
+        about: true,
+        skills: true,
+        projects: true,
+        certifications: true,
+        services: true,
+        qualification: true,
+        testimonials: true,
+        contact: true,
+        extraPages: true,
+        ...(globalMeta.sectionVisibility || {}),
+    };
+    const showSection = (key) => sectionVisibility[key] !== false;
+    const templateStyle = portfolio?.meta?.templateStyle || {};
+    const templatePageCopies = Array.isArray(portfolio?.meta?.templatePageCopies) ? portfolio.meta.templatePageCopies : [];
+    const fontFamilyMap = {
+        default: undefined,
+        poppins: "'Poppins', 'Segoe UI', sans-serif",
+        merriweather: "'Merriweather', Georgia, serif",
+        'fira-sans': "'Fira Sans', 'Segoe UI', sans-serif",
+        playfair: "'Playfair Display', Georgia, serif",
+    };
+    const pageStyle = {
+        fontFamily: fontFamilyMap[templateStyle.fontFamily] || undefined,
+        fontSize: `${(Number(templateStyle.textScale || 100) / 100).toFixed(2)}em`,
+    };
+
+    useEffect(() => {
+        const css = [
+            showSection('about') ? '' : '#about,.about.section{display:none !important;}',
+            showSection('skills') ? '' : '#skills,.skills.section{display:none !important;}',
+            showSection('projects') ? '' : '#portfolio,#work,#projects-section,.portfolio.section{display:none !important;}',
+            showSection('certifications') ? '' : '.certifications.section,.awards.section{display:none !important;}',
+            showSection('qualification') ? '' : '.qualification.section{display:none !important;}',
+            showSection('services') ? '' : '.services.section{display:none !important;}',
+            showSection('testimonials') ? '' : '.testimonial.section{display:none !important;}',
+            showSection('contact') ? '' : '#contact,.contact.section{display:none !important;}',
+        ].join('\n');
+
+        const id = 'dps-section-visibility-style';
+        let styleEl = document.getElementById(id);
+        if (!styleEl) {
+            styleEl = document.createElement('style');
+            styleEl.id = id;
+            document.head.appendChild(styleEl);
+        }
+        styleEl.textContent = css;
+
+        // Fallback: hide sections by heading keywords for templates without semantic ids/classes.
+        const sections = Array.from(document.querySelectorAll('section'));
+        sections.forEach((sec) => {
+            if (sec.dataset.dpsHiddenByFilter === '1') {
+                sec.style.display = '';
+                delete sec.dataset.dpsHiddenByFilter;
+            }
+        });
+
+        const headingText = (sec) => {
+            const h = sec.querySelector('h1,h2,h3,h4,h5,h6');
+            return String(h?.textContent || '').trim().toLowerCase();
+        };
+
+        const hideWhere = (predicate) => {
+            sections.forEach((sec) => {
+                if (predicate(sec)) {
+                    sec.style.display = 'none';
+                    sec.dataset.dpsHiddenByFilter = '1';
+                }
+            });
+        };
+
+        if (!showSection('about')) {
+            hideWhere((sec) => /\babout\b/.test(headingText(sec)));
+        }
+        if (!showSection('skills')) {
+            hideWhere((sec) => /(skills?|expertise|tech stack|tools)/.test(headingText(sec)));
+        }
+        if (!showSection('projects')) {
+            hideWhere((sec) => /(projects?|portfolio|selected works|work|timeline)/.test(headingText(sec)));
+        }
+        if (!showSection('certifications')) {
+            hideWhere((sec) => /(certifications?|awards|recognition)/.test(headingText(sec)));
+        }
+        if (!showSection('qualification')) {
+            hideWhere((sec) => /(qualification|education|experience)/.test(headingText(sec)));
+        }
+        if (!showSection('services')) {
+            hideWhere((sec) => /\bservices?\b/.test(headingText(sec)));
+        }
+        if (!showSection('testimonials')) {
+            hideWhere((sec) => /(testimonial|feedback)/.test(headingText(sec)));
+        }
+        if (!showSection('contact')) {
+            hideWhere((sec) => /(contact|reach me)/.test(headingText(sec)));
+        }
+
+        return () => {
+            const existing = document.getElementById(id);
+            if (existing) existing.remove();
+            sections.forEach((sec) => {
+                if (sec.dataset.dpsHiddenByFilter === '1') {
+                    sec.style.display = '';
+                    delete sec.dataset.dpsHiddenByFilter;
+                }
+            });
+        };
+    }, [
+        templateId,
+        sectionVisibility.about,
+        sectionVisibility.skills,
+        sectionVisibility.projects,
+        sectionVisibility.certifications,
+        sectionVisibility.services,
+        sectionVisibility.qualification,
+        sectionVisibility.testimonials,
+        sectionVisibility.contact,
+    ]);
+
+    const commitRoot = (key, value) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({ ...prev, [key]: value }));
+    };
+
+    const commitMeta = (key, value) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({ ...prev, meta: { ...(prev.meta || {}), [key]: value } }));
+    };
+
+    const commitProject = (index, key, value) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => {
+            const nextProjects = Array.isArray(prev.projects) ? [...prev.projects] : [];
+            nextProjects[index] = { ...(nextProjects[index] || {}), [key]: value };
+            return { ...prev, projects: nextProjects };
+        });
+    };
+
+    const addProjectItem = (item) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            projects: [...(Array.isArray(prev.projects) ? prev.projects : []), item],
+        }));
+    };
+
+    const removeProjectItem = (index) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            projects: (Array.isArray(prev.projects) ? prev.projects : []).filter((_, i) => i !== index),
+        }));
+    };
+
+    const setSkillsList = (nextSkills) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({ ...prev, skills: nextSkills }));
+    };
+
+    const updateSkillItem = (index, value) => {
+        const current = Array.isArray(skills) ? [...skills] : [];
+        current[index] = value;
+        setSkillsList(current);
+    };
+
+    const addSkillItem = (label = 'New Skill') => {
+        const next = [...(Array.isArray(skills) ? skills : []), label];
+        setSkillsList(next);
+    };
+
+    const removeSkillItem = (index) => {
+        const next = (Array.isArray(skills) ? skills : []).filter((_, i) => i !== index);
+        setSkillsList(next);
+    };
+
+    const updateMetaListItem = (key, index, patch) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => {
+            const list = Array.isArray(prev?.meta?.[key]) ? [...prev.meta[key]] : [];
+            list[index] = { ...(list[index] || {}), ...patch };
+            return { ...prev, meta: { ...(prev.meta || {}), [key]: list } };
+        });
+    };
+
+    const addMetaListItem = (key, item) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            meta: {
+                ...(prev.meta || {}),
+                [key]: [...(Array.isArray(prev?.meta?.[key]) ? prev.meta[key] : []), item],
+            },
+        }));
+    };
+
+    const removeMetaListItem = (key, index) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            meta: {
+                ...(prev.meta || {}),
+                [key]: (Array.isArray(prev?.meta?.[key]) ? prev.meta[key] : []).filter((_, i) => i !== index),
+            },
+        }));
+    };
+
+    const addSkillGlobal = () => {
+        if (!isEditable) return;
+        const value = window.prompt('Add skill');
+        const clean = String(value || '').trim();
+        if (!clean) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            skills: [...(Array.isArray(prev.skills) ? prev.skills : []), clean],
+        }));
+    };
+
+    const updateCertificationItem = (index, key, value) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => {
+            const nextCertifications = Array.isArray(prev.certifications) ? [...prev.certifications] : [];
+            nextCertifications[index] = { ...(nextCertifications[index] || {}), [key]: value };
+            return { ...prev, certifications: nextCertifications };
+        });
+    };
+
+    const addProjectGlobal = () => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            projects: [
+                ...(Array.isArray(prev.projects) ? prev.projects : []),
+                {
+                    title: `Project ${(Array.isArray(prev.projects) ? prev.projects.length : 0) + 1}`,
+                    desc: 'Edit project description',
+                    tech: '',
+                    year: '',
+                    image: '',
+                    repoUrl: '',
+                    pdfUrl: '',
+                },
+            ],
+        }));
+    };
+
+    const addCertificationGlobal = () => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            certifications: [
+                ...(Array.isArray(prev.certifications) ? prev.certifications : []),
+                { name: 'New Certification', issuer: 'Issuer' },
+            ],
+        }));
+    };
+
+    const removeTemplatePageCopy = (index) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            meta: {
+                ...(prev.meta || {}),
+                templatePageCopies: (Array.isArray(prev?.meta?.templatePageCopies) ? prev.meta.templatePageCopies : []).filter((_, i) => i !== index),
+            },
+        }));
+    };
+
+    const EditableText = ({ as = 'span', className = '', value = '', placeholder = '', onCommit }) => {
+        const Tag = as;
+        if (!isEditable || typeof onCommit !== 'function') {
+            return <Tag className={className}>{value || placeholder}</Tag>;
+        }
+
+        return (
+            <Tag
+                contentEditable
+                suppressContentEditableWarning
+                onInput={(e) => onCommit(e.currentTarget.textContent || '')}
+                onBlur={(e) => onCommit(e.currentTarget.textContent || '')}
+                className={`${className} outline-none rounded px-1 -mx-1 hover:bg-black/10`}
+            >
+                {value || placeholder}
+            </Tag>
+        );
+    };
 
     // Tiny "Made with" banner
     const Footer = () => (
-        <div className="fixed bottom-4 right-4 bg-black/50 backdrop-blur text-white px-3 py-1 rounded-full text-xs">
-            Built with Digital Portfolio System
-        </div>
+        <>
+            {!suppressTemplateCopies && <TemplateExtraPages />}
+            {!hideFooterBadge && (
+                <div className="fixed bottom-4 right-4 bg-black/50 backdrop-blur text-white px-3 py-1 rounded-full text-xs">
+                    Built with Digital Portfolio System
+                </div>
+            )}
+        </>
     );
+
+    useEffect(() => {
+        if (!isEditable) return undefined;
+
+        const matches = {
+            skills: /(skills?|expertise|tech stack|tools)/i,
+            projects: /(projects?|portfolio|selected works|work|timeline)/i,
+            certifications: /(certifications?|awards|recognition)/i,
+        };
+
+        const actions = {
+            skills: addSkillGlobal,
+            projects: addProjectGlobal,
+            certifications: addCertificationGlobal,
+        };
+
+        const labels = {
+            skills: '+ Skill',
+            projects: '+ Project',
+            certifications: '+ Certification',
+        };
+
+        const injected = [];
+        const sections = Array.from(document.querySelectorAll('section'));
+        sections.forEach((section) => {
+            const heading = section.querySelector('h1,h2,h3,h4,h5,h6');
+            if (!heading) return;
+            const text = String(heading.textContent || '').trim();
+            if (!text) return;
+
+            const key = Object.keys(matches).find((k) => matches[k].test(text));
+            if (!key) return;
+            if (heading.dataset.dpsInlineAdd === '1') return;
+
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = labels[key];
+            btn.className = 'dps-inline-add-btn';
+            btn.style.marginLeft = '8px';
+            btn.style.padding = '2px 8px';
+            btn.style.borderRadius = '999px';
+            btn.style.fontSize = '12px';
+            btn.style.fontWeight = '600';
+            btn.style.border = '1px solid rgba(37,99,235,0.35)';
+            btn.style.background = 'rgba(37,99,235,0.1)';
+            btn.style.color = '#2563eb';
+            btn.style.cursor = 'pointer';
+            btn.addEventListener('click', actions[key]);
+
+            const wrap = document.createElement('span');
+            wrap.style.display = 'inline-flex';
+            wrap.style.alignItems = 'center';
+            wrap.appendChild(btn);
+            heading.appendChild(wrap);
+            heading.dataset.dpsInlineAdd = '1';
+
+            injected.push({ heading, btn, wrap, key });
+        });
+
+        return () => {
+            injected.forEach(({ heading, btn, wrap, key }) => {
+                btn.removeEventListener('click', actions[key]);
+                if (wrap.parentElement) wrap.parentElement.removeChild(wrap);
+                if (heading) delete heading.dataset.dpsInlineAdd;
+            });
+        };
+    }, [isEditable, templateId, projects?.length, skills?.length, certifications?.length]);
+
+    const getProjectImage = (p) => p?.image || p?.imageUrl || '';
+    const ProjectAttachments = ({ p, dark = false, showImage = true }) => {
+        const image = getProjectImage(p);
+        const textClass = dark ? 'text-slate-300' : 'text-slate-600';
+        const linkClass = dark ? 'text-cyan-300 hover:text-cyan-200' : 'text-blue-700 hover:text-blue-600';
+
+        return (
+            <div className="mt-3 space-y-2">
+                {p?.repoUrl && (
+                    <a href={p.repoUrl} target="_blank" rel="noopener noreferrer" className={`block text-xs break-all underline ${linkClass}`}>
+                        Repo: {p.repoUrl}
+                    </a>
+                )}
+                {p?.pdfUrl && (
+                    <a href={p.pdfUrl} target="_blank" rel="noopener noreferrer" className={`block text-xs break-all underline ${linkClass}`}>
+                        PDF: {p.pdfName || 'Open project PDF'}
+                    </a>
+                )}
+                {showImage && image ? (
+                    <img src={image} alt={p?.title || 'Project'} className="w-full h-48 object-cover rounded-xl border border-white/10" />
+                ) : showImage ? (
+                    <div className={`text-xs ${textClass}`}>No project image added.</div>
+                ) : null}
+            </div>
+        );
+    };
+    const TemplateExtraPages = () => {
+        if (suppressTemplateCopies || !showSection('extraPages') || !templatePageCopies.length) return null;
+        return (
+            <div>
+                {templatePageCopies.map((pagePortfolio, i) => (
+                    <section key={i} className="border-t border-white/10">
+                        <div className="flex justify-end max-w-6xl mx-auto px-6 py-4">
+                            {isEditable && (
+                                <button
+                                    type="button"
+                                    onClick={() => removeTemplatePageCopy(i)}
+                                    className="text-xs px-2 py-1 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10"
+                                >
+                                    Remove Page {i + 2}
+                                </button>
+                            )}
+                        </div>
+                        <PortfolioView
+                            portfolioOverride={{
+                                ...pagePortfolio,
+                                meta: {
+                                    ...(pagePortfolio?.meta || {}),
+                                    sectionVisibility: {
+                                        ...(globalMeta.sectionVisibility || {}),
+                                    },
+                                },
+                            }}
+                            editable={isEditable}
+                            onPortfolioChange={(updater) => {
+                                if (!isEditable) return;
+                                onPortfolioChange((prev) => {
+                                    const copies = Array.isArray(prev?.meta?.templatePageCopies) ? [...prev.meta.templatePageCopies] : [];
+                                    const current = copies[i] || {};
+                                    const next = typeof updater === 'function' ? updater(current) : updater;
+                                    copies[i] = {
+                                        ...next,
+                                        meta: {
+                                            ...(next?.meta || {}),
+                                            templatePageCopies: [],
+                                            templatePages: [],
+                                        },
+                                    };
+                                    return {
+                                        ...prev,
+                                        meta: {
+                                            ...(prev.meta || {}),
+                                            templatePageCopies: copies,
+                                        },
+                                    };
+                                });
+                            }}
+                            hideFooterBadge
+                            suppressTemplateCopies
+                        />
+                    </section>
+                ))}
+            </div>
+        );
+    };
 
     // Modern Minimal Template
     if (templateId === 'modern') {
@@ -25,7 +498,13 @@ const PortfolioView = () => {
             <div className="min-h-screen bg-white text-slate-900 font-sans selection:bg-black selection:text-white">
                 <header className="px-6 py-20 max-w-4xl mx-auto">
                     <h1 className="text-6xl font-bold tracking-tighter mb-6">Student Portfolio</h1>
-                    <p className="text-xl text-slate-600 leading-relaxed max-w-2xl">{about}</p>
+                    <EditableText
+                        as="p"
+                        className="text-xl text-slate-600 leading-relaxed max-w-2xl"
+                        value={about}
+                        placeholder="Write your About section here."
+                        onCommit={(v) => commitRoot('about', v)}
+                    />
 
                     <div className="flex gap-4 mt-8">
                         <button className="bg-black text-white px-6 py-2 rounded-full font-medium hover:bg-slate-800 transition">Contact Me</button>
@@ -38,8 +517,9 @@ const PortfolioView = () => {
                         <div className="grid md:grid-cols-2 gap-8">
                             {projects.map((p, i) => (
                                 <div key={i} className="bg-white p-8 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition">
-                                    <h3 className="text-xl font-bold mb-3">{p.title}</h3>
-                                    <p className="text-slate-600 mb-4">{p.desc}</p>
+                                    <EditableText as="h3" className="text-xl font-bold mb-3" value={p.title} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                    <EditableText as="p" className="text-slate-600 mb-4" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                    <ProjectAttachments p={p} />
                                 </div>
                             ))}
                         </div>
@@ -76,7 +556,13 @@ const PortfolioView = () => {
                     <h1 className="text-7xl md:text-9xl font-bold mb-8 bg-clip-text text-transparent bg-gradient-to-b from-white to-slate-500">
                         HELLO.
                     </h1>
-                    <p className="text-2xl md:text-3xl text-slate-400 font-light max-w-3xl mx-auto">{about}</p>
+                    <EditableText
+                        as="p"
+                        className="text-2xl md:text-3xl text-slate-400 font-light max-w-3xl mx-auto"
+                        value={about}
+                        placeholder="Write your intro here."
+                        onCommit={(v) => commitRoot('about', v)}
+                    />
                 </header>
 
                 <section className="px-6 py-12">
@@ -86,8 +572,9 @@ const PortfolioView = () => {
                                 <div className="mb-auto">
                                     <span className="text-xs font-mono text-purple-400">0{i + 1}</span>
                                 </div>
-                                <h3 className="text-3xl font-bold group-hover:text-purple-400 transition">{p.title}</h3>
-                                <p className="text-slate-500 mt-2">{p.desc}</p>
+                                <EditableText as="h3" className="text-3xl font-bold group-hover:text-purple-400 transition" value={p.title} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                <EditableText as="p" className="text-slate-500 mt-2" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                <ProjectAttachments p={p} dark />
                             </div>
                         ))}
                     </div>
@@ -140,7 +627,7 @@ const PortfolioView = () => {
 
                         <div className="absolute inset-0 flex flex-col justify-center items-center text-white text-center px-4 bg-black/25">
                             <h1 className="text-3xl sm:text-4xl font-normal leading-tight">Portfolio by</h1>
-                            <h2 className="text-3xl sm:text-4xl font-normal leading-tight mt-1">{fullName}</h2>
+                            <EditableText as="h2" className="text-3xl sm:text-4xl font-normal leading-tight mt-1" value={fullName} placeholder="Your Name" onCommit={(v) => commitMeta('fullName', v)} />
                             <button
                                 onClick={scrollToProjects}
                                 className="mt-6 bg-black/80 rounded-full px-6 py-2 text-xs sm:text-sm font-semibold tracking-wide"
@@ -170,9 +657,13 @@ const PortfolioView = () => {
 
                         <div className="flex-1">
                             <h3 className="font-bold text-sm sm:text-base mb-2">ABOUT ME</h3>
-                            <p className="text-xs sm:text-sm max-w-xl leading-relaxed mb-6">
-                                {about || 'An architect who believes in sustainable and minimal design, focusing on functionality and harmony with nature.'}
-                            </p>
+                            <EditableText
+                                as="p"
+                                className="text-xs sm:text-sm max-w-xl leading-relaxed mb-6"
+                                value={about}
+                                placeholder="An architect who believes in sustainable and minimal design, focusing on functionality and harmony with nature."
+                                onCommit={(v) => commitRoot('about', v)}
+                            />
 
                             <div className="flex flex-col sm:flex-row sm:space-x-12 text-xs sm:text-sm font-semibold text-black max-w-xl">
                                 <div className="mb-4 sm:mb-0">
@@ -212,7 +703,7 @@ const PortfolioView = () => {
                                                 Add Project Image URL
                                             </div>
                                         )}
-                                        <h4 className="mt-2 font-normal text-sm sm:text-base">{p.title || `Project ${i + 1}`}</h4>
+                                        <EditableText as="h4" className="mt-2 font-normal text-sm sm:text-base" value={p.title || `Project ${i + 1}`} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
                                         <p className="text-xs sm:text-sm">{p.year || ''}</p>
                                     </div>
                                 );
@@ -248,54 +739,1887 @@ const PortfolioView = () => {
         );
     }
 
-    // Fallback / Academic
-    return (
-        <div className="min-h-screen bg-slate-50 font-serif text-slate-800">
-            <div className="max-w-3xl mx-auto bg-white min-h-screen shadow-2xl p-12 md:p-20 border-x">
-                <header className="border-b-2 border-black pb-8 mb-12">
-                    <h1 className="text-4xl font-bold uppercase tracking-widest mb-4">Portfolio</h1>
-                    <p className="text-lg italic text-slate-600">{about}</p>
+    // BTech Template
+    if (templateId === 'btech') {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white font-sans">
+                <header className="px-6 py-24 max-w-5xl mx-auto text-center border-b border-slate-700">
+                    <h1 className="text-6xl md:text-7xl font-bold mb-6 bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
+                        BTech Portfolio
+                    </h1>
+                    <EditableText
+                        as="p"
+                        className="text-xl text-slate-300 leading-relaxed max-w-3xl mx-auto"
+                        value={about}
+                        placeholder="Write your About section here."
+                        onCommit={(v) => commitRoot('about', v)}
+                    />
+                    <div className="flex justify-center gap-4 mt-8">
+                        <button className="px-8 py-3 bg-blue-600 hover:bg-blue-500 rounded-lg font-medium transition">Contact</button>
+                    </div>
                 </header>
 
-                <section className="mb-12">
-                    <h2 className="text-2xl font-bold uppercase mb-6 flex items-center gap-3">
-                        <span className="w-8 h-1 bg-black"></span> Projects
+                <section className="px-6 py-16 max-w-5xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-10 flex items-center gap-3">
+                        <span className="w-1 h-8 bg-blue-500"></span> Featured Projects
                     </h2>
-                    <div className="space-y-8">
+                    <div className="grid md:grid-cols-2 gap-6">
                         {projects.map((p, i) => (
-                            <div key={i}>
-                                <h3 className="text-xl font-bold">{p.title}</h3>
-                                <p className="text-slate-600 mt-1">{p.desc}</p>
+                            <div key={i} className="bg-slate-800 border border-slate-700 rounded-lg p-6 hover:border-blue-500 transition">
+                                <EditableText as="h3" className="text-xl font-bold mb-3 text-blue-400" value={p.title} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                <EditableText as="p" className="text-slate-300 mb-4" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                <ProjectAttachments p={p} dark />
+                                <div className="text-sm text-slate-500">{p.tech || 'Technologies not specified'}</div>
                             </div>
                         ))}
                     </div>
                 </section>
 
-                <section className="mb-12">
-                    <h2 className="text-2xl font-bold uppercase mb-6 flex items-center gap-3">
-                        <span className="w-8 h-1 bg-black"></span> Skills
+                <section className="px-6 py-16 bg-slate-800/50 max-w-5xl mx-auto w-full">
+                    <h2 className="text-3xl font-bold mb-8 flex items-center gap-3">
+                        <span className="w-1 h-8 bg-cyan-500"></span> Technical Skills
                     </h2>
-                    <p className="leading-relaxed">
-                        {skills && skills.join(" • ")}
-                    </p>
+                    <div className="flex flex-wrap gap-3">
+                        {skills && skills.map(s => (
+                            <span key={s} className="px-4 py-2 bg-slate-700 border border-slate-600 rounded-full text-sm font-medium hover:bg-slate-600 transition">{s}</span>
+                        ))}
+                    </div>
                 </section>
 
-                <section>
-                    <h2 className="text-2xl font-bold uppercase mb-6 flex items-center gap-3">
-                        <span className="w-8 h-1 bg-black"></span> Awards
+                <section className="px-6 py-16 max-w-5xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-10 flex items-center gap-3">
+                        <span className="w-1 h-8 bg-blue-500"></span> Certifications & Awards
                     </h2>
-                    <ul className="list-disc pl-5 space-y-2">
+                    <div className="space-y-4">
                         {certifications.map((c, i) => (
-                            <li key={i}>
-                                <span className="font-bold">{c.name}</span> - {c.issuer}
-                            </li>
+                            <div key={i} className="bg-slate-800 border-l-4 border-blue-500 p-4 rounded">
+                                <h4 className="font-bold text-white">{c.name}</h4>
+                                <p className="text-slate-400 text-sm">{c.issuer}</p>
+                            </div>
                         ))}
-                    </ul>
+                    </div>
                 </section>
+                <Footer />
             </div>
+        );
+    }
+
+    // BTech Classic Single Page (Bedimcode-style: Home/About/Skills/Work/Contact)
+    if (templateId === 'btech-bedimcode-1') {
+        return (
+            <>
+                <BtechBedimcode1Template
+                    portfolio={portfolio}
+                    about={about}
+                    skills={skills}
+                    projects={projects}
+                    exportMode={exportMode}
+                />
+                <TemplateExtraPages />
+            </>
+        );
+    }
+
+    // BTech Sections (Qualification-style: includes qualification timeline)
+    if (templateId === 'btech-bedimcode-2') {
+        return (
+            <>
+                <BtechBedimcode2Template
+                    portfolio={portfolio}
+                    about={about}
+                    skills={skills}
+                    projects={projects}
+                />
+                <TemplateExtraPages />
+            </>
+        );
+    }
+
+    // BTech Computer Science Template
+    if (templateId === 'btech-cs') {
+        const meta = portfolio.meta || {};
+        const fullName = meta.fullName || 'B.Tech CSE Student';
+        return (
+            <div className="min-h-screen bg-white text-slate-900 font-sans" style={pageStyle}>
+                <header className="px-6 py-20 bg-gradient-to-r from-blue-600 to-blue-800 text-white max-w-6xl mx-auto">
+                    <h1 className="text-5xl font-bold mb-2">Computer Science Engineering Portfolio</h1>
+                    <EditableText as="p" className="text-lg text-blue-100 mb-1" value={fullName} placeholder="Your Name" onCommit={(v) => commitMeta('fullName', v)} />
+                    <EditableText as="p" className="text-lg text-blue-100" value={about} placeholder="Your intro" onCommit={(v) => commitRoot('about', v)} />
+                </header>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-blue-900">Software & Development Projects</h2>
+                    <div className="grid md:grid-cols-2 gap-8">
+                        {projects.map((p, i) => (
+                            <div key={i} className="border-2 border-blue-200 rounded-lg p-6 hover:shadow-lg transition">
+                                <EditableText as="h3" className="text-2xl font-bold text-blue-700 mb-3" value={p.title} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                <EditableText as="p" className="text-slate-700 mb-4" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                <ProjectAttachments p={p} />
+                                <div className="text-sm text-blue-600 font-medium">{p.tech || 'Tech stack not specified'}</div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 bg-blue-50 max-w-6xl mx-auto w-full">
+                    <h2 className="text-3xl font-bold mb-8 text-blue-900">Core CS Skills</h2>
+                    <div className="flex flex-wrap gap-3">
+                        {skills && skills.map(s => (
+                            <span key={s} className="px-4 py-2 bg-white border-2 border-blue-400 text-blue-700 rounded-full font-medium">{s}</span>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-blue-900">Certifications</h2>
+                    <div className="space-y-4">
+                        {certifications.map((c, i) => (
+                            <div key={i} className="bg-blue-100 border-l-4 border-blue-600 p-4 rounded">
+                                <h4 className="font-bold text-blue-900">{c.name}</h4>
+                                <p className="text-blue-700">{c.issuer}</p>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+                <Footer />
+            </div>
+        );
+    }
+
+    // BTech CS Unicons Sections Template
+    if (templateId === 'btech-cs-unicons') {
+        const meta = portfolio.meta || {};
+        const fullName = meta.fullName || 'B.Tech CSE Student';
+        const role = meta.role || 'Frontend Developer';
+        const college = meta.college || 'Computer Science Department';
+        const company = meta.company || 'Open for Internship';
+        const contactEmail = meta.contactEmail || 'contact@example.com';
+        const serviceItems = Array.isArray(meta.uniconsServices) && meta.uniconsServices.length > 0
+            ? meta.uniconsServices
+            : [
+                { title: 'Web Development', text: 'Building responsive web interfaces and scalable apps.' },
+                { title: 'UI/UX Design', text: 'Designing clean and accessible user experiences.' },
+                { title: 'Backend APIs', text: 'Developing APIs, authentication, and database flows.' },
+            ];
+        const testimonials = Array.isArray(meta.uniconsTestimonials) && meta.uniconsTestimonials.length > 0
+            ? meta.uniconsTestimonials
+            : [
+                { name: 'Faculty Mentor', text: 'Strong problem-solving skills and consistent project delivery.' },
+                { name: 'Project Teammate', text: 'Great collaborator with excellent frontend implementation skills.' },
+            ];
+        const sectionVisibility = {
+            about: true,
+            skills: true,
+            qualification: true,
+            services: true,
+            portfolio: true,
+            project: true,
+            testimonial: true,
+            contact: true,
+            ...(meta.uniconsSections || {}),
+        };
+
+        return (
+            <div className="min-h-screen bg-[#f7f9fc] text-slate-900 font-sans" style={pageStyle}>
+                <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur" id="header">
+                    <div className="max-w-6xl mx-auto px-6 py-4 flex flex-wrap items-center justify-between gap-3">
+                        <div className="font-bold text-lg">Portfolio</div>
+                        <nav className="text-sm flex flex-wrap gap-3 text-slate-600">
+                            {['home', 'about', 'skills', 'portfolio', 'contact'].map((item) => (
+                                <a key={item} href={`#${item}`} className="hover:text-blue-600 capitalize">
+                                    {item}
+                                </a>
+                            ))}
+                        </nav>
+                    </div>
+                </header>
+
+                <main className="main max-w-6xl mx-auto px-6 py-10 space-y-8">
+                    <section className="home section bg-white rounded-2xl border border-slate-200 p-8" id="home">
+                        <p className="text-blue-600 font-semibold text-sm uppercase tracking-[0.15em]">Hello, I am</p>
+                        <EditableText as="h1" className="text-4xl md:text-5xl font-bold mt-2" value={fullName} placeholder="Your Name" onCommit={(v) => commitMeta('fullName', v)} />
+                        <EditableText as="p" className="text-slate-600 mt-3 text-lg" value={role} placeholder="Your Role" onCommit={(v) => commitMeta('role', v)} />
+                    </section>
+
+                    {sectionVisibility.about && (
+                        <section className="about section bg-white rounded-2xl border border-slate-200 p-8" id="about">
+                            <h2 className="text-2xl font-bold mb-4">About</h2>
+                            <EditableText as="p" className="text-slate-700 leading-7" value={about} placeholder="Write your about section here." onCommit={(v) => commitRoot('about', v)} />
+                        </section>
+                    )}
+
+                    {sectionVisibility.skills && (
+                        <section className="skills section bg-white rounded-2xl border border-slate-200 p-8" id="skills">
+                            <div className="flex items-center justify-between gap-3 mb-4">
+                                <h2 className="text-2xl font-bold">Skills</h2>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {(skills || []).map((s, i) => (
+                                    <span key={`${s}-${i}`} className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-sm border border-blue-300 bg-blue-50 text-blue-700">
+                                        {isEditable ? (
+                                            <input
+                                                value={s}
+                                                onChange={(e) => updateSkillItem(i, e.target.value)}
+                                                className="bg-transparent min-w-[80px] max-w-[140px] outline-none"
+                                            />
+                                        ) : (
+                                            <span>{s}</span>
+                                        )}
+                                    </span>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {sectionVisibility.qualification && (
+                        <section className="qualification section bg-white rounded-2xl border border-slate-200 p-8">
+                            <h2 className="text-2xl font-bold mb-4">Qualification</h2>
+                            <div className="grid md:grid-cols-2 gap-4 text-slate-700">
+                                <div>
+                                    <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Education</p>
+                                    <EditableText as="p" className="font-medium" value={meta.education || college} placeholder="Education" onCommit={(v) => commitMeta('education', v)} />
+                                    <EditableText as="p" className="text-sm text-slate-500" value={meta.educationYears || ''} placeholder="Years" onCommit={(v) => commitMeta('educationYears', v)} />
+                                </div>
+                                <div>
+                                    <p className="text-xs uppercase tracking-[0.15em] text-slate-500">Experience</p>
+                                    <EditableText as="p" className="font-medium" value={meta.experience || company} placeholder="Experience" onCommit={(v) => commitMeta('experience', v)} />
+                                    <EditableText as="p" className="text-sm text-slate-500" value={meta.experienceYears || ''} placeholder="Years" onCommit={(v) => commitMeta('experienceYears', v)} />
+                                </div>
+                            </div>
+                        </section>
+                    )}
+
+                    {sectionVisibility.services && (
+                        <section className="services section bg-white rounded-2xl border border-slate-200 p-8" id="services">
+                            <div className="flex items-center justify-between gap-3 mb-4">
+                                <h2 className="text-2xl font-bold">Services</h2>
+                            </div>
+                            <div className="grid md:grid-cols-3 gap-4">
+                                {serviceItems.map((srv, i) => (
+                                    <article key={`${srv.title}-${i}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <EditableText as="h3" className="font-semibold" value={srv.title} placeholder="Service title" onCommit={(v) => updateMetaListItem('uniconsServices', i, { title: v })} />
+                                        </div>
+                                        <EditableText as="p" className="text-sm text-slate-600 mt-2" value={srv.text} placeholder="Service description" onCommit={(v) => updateMetaListItem('uniconsServices', i, { text: v })} />
+                                    </article>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {sectionVisibility.portfolio && (
+                        <section className="portfolio section bg-white rounded-2xl border border-slate-200 p-8" id="portfolio">
+                            <div className="flex items-center justify-between gap-3 mb-4">
+                                <h2 className="text-2xl font-bold">Portfolio</h2>
+                            </div>
+                            <div className="grid md:grid-cols-2 gap-5">
+                                {projects.map((p, i) => (
+                                    <article key={i} className="rounded-xl border border-slate-200 p-5">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <EditableText as="h3" className="text-xl font-semibold" value={p.title || `Project ${i + 1}`} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                        </div>
+                                        <EditableText as="p" className="text-slate-600 mt-2" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                        <ProjectAttachments p={p} />
+                                    </article>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {sectionVisibility.project && (
+                    <section className="project section bg-blue-600 text-white rounded-2xl p-8">
+                        <h2 className="text-2xl font-bold mb-2">Project In Mind</h2>
+                        <EditableText
+                            as="p"
+                            className="text-blue-100"
+                            value={meta.uniconsProjectNote || 'Looking for collaboration on web or AI projects. Reach out through the contact section.'}
+                            placeholder="Project-in-mind note"
+                            onCommit={(v) => commitMeta('uniconsProjectNote', v)}
+                        />
+                    </section>
+                    )}
+
+                    {sectionVisibility.testimonial && (
+                        <section className="testimonial section bg-white rounded-2xl border border-slate-200 p-8">
+                            <div className="flex items-center justify-between gap-3 mb-4">
+                                <h2 className="text-2xl font-bold">Testimonial</h2>
+                            </div>
+                            <div className="grid md:grid-cols-2 gap-4">
+                                {testimonials.map((t, i) => (
+                                    <blockquote key={`${t.name}-${i}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <EditableText as="p" className="text-slate-700" value={t.text} placeholder="Testimonial text" onCommit={(v) => updateMetaListItem('uniconsTestimonials', i, { text: v })} />
+                                        </div>
+                                        <EditableText as="footer" className="text-sm text-slate-500 mt-2" value={`- ${t.name || 'Name'}`} placeholder="- Name" onCommit={(v) => updateMetaListItem('uniconsTestimonials', i, { name: String(v).replace(/^-+\s*/, '') })} />
+                                    </blockquote>
+                                ))}
+                            </div>
+                        </section>
+                    )}
+
+                    {sectionVisibility.contact && (
+                        <section className="contact section bg-white rounded-2xl border border-slate-200 p-8" id="contact">
+                            <h2 className="text-2xl font-bold mb-4">Contact Me</h2>
+                            <EditableText as="p" className="text-blue-700 break-all" value={contactEmail} placeholder="you@example.com" onCommit={(v) => commitMeta('contactEmail', v)} />
+                        </section>
+                    )}
+                </main>
+
+                <footer className="footer border-t border-slate-200 bg-white">
+                    <EditableText
+                        as="div"
+                        className="max-w-6xl mx-auto px-6 py-5 text-sm text-slate-500"
+                        value={meta.uniconsFooterText || 'Portfolio footer'}
+                        placeholder="Footer text"
+                        onCommit={(v) => commitMeta('uniconsFooterText', v)}
+                    />
+                </footer>
+
+                <Footer />
+            </div>
+        );
+    }
+
+    // BTech CS Devfolio Template
+    if (templateId === 'btech-cs-devfolio') {
+        const meta = portfolio.meta || {};
+        const fullName = meta.fullName || 'B.Tech CSE Student';
+        return (
+            <div className="min-h-screen bg-[#0b1220] text-slate-100 font-sans" style={pageStyle}>
+                <header className="max-w-6xl mx-auto px-6 py-16">
+                    <p className="uppercase tracking-[0.18em] text-cyan-300 text-xs">Developer Portfolio</p>
+                    <EditableText as="h1" className="mt-3 text-5xl font-bold" value={fullName} placeholder="Your Name" onCommit={(v) => commitMeta('fullName', v)} />
+                    <EditableText as="p" className="mt-4 text-slate-300 max-w-3xl" value={about} placeholder="Your intro" onCommit={(v) => commitRoot('about', v)} />
+                </header>
+
+                <section className="max-w-6xl mx-auto px-6 pb-14">
+                    <h2 className="text-2xl font-bold mb-6">Projects</h2>
+                    <div className="grid md:grid-cols-2 gap-6">
+                        {projects.map((p, i) => (
+                            <article key={i} className="rounded-2xl border border-cyan-500/30 bg-[#111c32] p-5">
+                                <h3 className="text-xl font-semibold text-cyan-300">{p.title || `Project ${i + 1}`}</h3>
+                                <EditableText as="p" className="text-slate-300 mt-2" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                {p.tech && <p className="text-xs uppercase tracking-[0.12em] text-cyan-200 mt-3">{p.tech}</p>}
+                                <ProjectAttachments p={p} dark />
+                            </article>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="max-w-6xl mx-auto px-6 pb-14">
+                    <h2 className="text-2xl font-bold mb-5">Tech Stack</h2>
+                    <div className="flex flex-wrap gap-2">
+                        {(skills || []).map((s) => (
+                            <span key={s} className="px-3 py-1 rounded-full text-sm border border-cyan-400/40 bg-cyan-400/10">
+                                {s}
+                            </span>
+                        ))}
+                    </div>
+                </section>
+                <Footer />
+            </div>
+        );
+    }
+
+    // BTech CS Systems Grid Template
+    if (templateId === 'btech-cs-systems') {
+        const meta = portfolio.meta || {};
+        const fullName = meta.fullName || 'B.Tech CSE Student';
+        return (
+            <div className="min-h-screen bg-white text-slate-900 font-sans" style={pageStyle}>
+                <header className="border-b border-slate-200">
+                    <div className="max-w-6xl mx-auto px-6 py-14">
+                        <EditableText as="h1" className="text-4xl md:text-5xl font-bold" value={fullName} placeholder="Your Name" onCommit={(v) => commitMeta('fullName', v)} />
+                        <EditableText as="p" className="mt-4 text-slate-600 max-w-3xl" value={about} placeholder="Your intro" onCommit={(v) => commitRoot('about', v)} />
+                    </div>
+                </header>
+
+                <section className="max-w-6xl mx-auto px-6 py-12">
+                    <h2 className="text-2xl font-bold mb-6">Systems & Software Projects</h2>
+                    <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+                        {projects.map((p, i) => (
+                            <div key={i} className="rounded-xl border border-slate-300 p-4 hover:shadow-md transition">
+                                <div className="text-xs text-slate-500 font-mono mb-2">#{String(i + 1).padStart(2, '0')}</div>
+                                <EditableText as="h3" className="font-bold text-lg" value={p.title || `Project ${i + 1}`} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                <EditableText as="p" className="text-sm text-slate-600 mt-2" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                <ProjectAttachments p={p} showImage={false} />
+                                {p.tech && <p className="text-xs text-slate-500 mt-2">{p.tech}</p>}
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="max-w-6xl mx-auto px-6 pb-12">
+                    <h2 className="text-2xl font-bold mb-5">Core Skills</h2>
+                    <div className="flex flex-wrap gap-2">
+                        {(skills || []).map((s) => (
+                            <span key={s} className="px-3 py-1 rounded bg-slate-100 border border-slate-300 text-sm">{s}</span>
+                        ))}
+                    </div>
+                </section>
+                <Footer />
+            </div>
+        );
+    }
+
+    // BTech CS AI/ML Track Template
+    if (templateId === 'btech-cs-ml') {
+        const meta = portfolio.meta || {};
+        const fullName = meta.fullName || 'B.Tech CSE Student';
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-indigo-950 via-slate-900 to-slate-950 text-slate-100 font-sans" style={pageStyle}>
+                <header className="max-w-6xl mx-auto px-6 py-16">
+                    <p className="text-xs uppercase tracking-[0.2em] text-indigo-300">AI / ML Portfolio</p>
+                    <EditableText as="h1" className="mt-3 text-5xl font-bold" value={fullName} placeholder="Your Name" onCommit={(v) => commitMeta('fullName', v)} />
+                    <EditableText as="p" className="mt-4 text-slate-300 max-w-3xl" value={about} placeholder="Your intro" onCommit={(v) => commitRoot('about', v)} />
+                </header>
+
+                <section className="max-w-6xl mx-auto px-6 pb-14">
+                    <h2 className="text-2xl font-bold mb-6">Model & Data Projects</h2>
+                    <div className="space-y-5">
+                        {projects.map((p, i) => (
+                            <article key={i} className="rounded-2xl border border-indigo-400/30 bg-indigo-500/10 p-5">
+                                <EditableText as="h3" className="text-xl font-semibold text-indigo-200" value={p.title || `Project ${i + 1}`} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                <EditableText as="p" className="text-slate-300 mt-2" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                {p.tech && <p className="text-xs uppercase tracking-[0.12em] text-indigo-200 mt-3">Stack: {p.tech}</p>}
+                                <ProjectAttachments p={p} dark />
+                            </article>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="max-w-6xl mx-auto px-6 pb-16">
+                    <h2 className="text-2xl font-bold mb-4">Tools & Skills</h2>
+                    <div className="flex flex-wrap gap-2">
+                        {(skills || []).map((s) => (
+                            <span key={s} className="px-3 py-1 rounded-full bg-indigo-400/15 border border-indigo-300/30 text-sm">
+                                {s}
+                            </span>
+                        ))}
+                    </div>
+                </section>
+                <Footer />
+            </div>
+        );
+    }
+
+    // BTech Mechanical Engineering Template
+    if (templateId === 'btech-mech') {
+        const meta = portfolio.meta || {};
+        const fullName = meta.fullName || 'B.Tech Mechanical Student';
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-amber-50 to-orange-50 text-slate-900 font-sans">
+                <header className="px-6 py-20 bg-gradient-to-r from-orange-600 to-amber-700 text-white">
+                    <div className="max-w-6xl mx-auto">
+                        <h1 className="text-5xl font-bold mb-2">Mechanical Engineering Portfolio</h1>
+                        <EditableText as="p" className="text-lg text-orange-100 mb-1" value={fullName} placeholder="Your Name" onCommit={(v) => commitMeta('fullName', v)} />
+                        <EditableText as="p" className="text-lg text-orange-100" value={about} placeholder="Your intro" onCommit={(v) => commitRoot('about', v)} />
+                    </div>
+                </header>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-orange-900">Mechanical & Design Projects</h2>
+                    <div className="grid md:grid-cols-2 gap-8">
+                        {projects.map((p, i) => (
+                            <div key={i} className="bg-white border-2 border-orange-300 rounded-lg p-6 shadow-md hover:shadow-lg transition">
+                                <EditableText as="h3" className="text-2xl font-bold text-orange-700 mb-3" value={p.title} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                <EditableText as="p" className="text-slate-700 mb-4" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                <ProjectAttachments p={p} />
+                                <div className="text-sm text-orange-600 font-medium">{p.tech || 'Tools & software not specified'}</div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 bg-orange-100 max-w-6xl mx-auto w-full">
+                    <h2 className="text-3xl font-bold mb-8 text-orange-900">Mechanical Skills & Tools</h2>
+                    <div className="flex flex-wrap gap-3">
+                        {skills && skills.map(s => (
+                            <span key={s} className="px-4 py-2 bg-white border-2 border-orange-500 text-orange-700 rounded-full font-medium">{s}</span>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-orange-900">Certifications & Achievements</h2>
+                    <div className="space-y-4">
+                        {certifications.map((c, i) => (
+                            <div key={i} className="bg-orange-100 border-l-4 border-orange-600 p-4 rounded">
+                                <h4 className="font-bold text-orange-900">{c.name}</h4>
+                                <p className="text-orange-700">{c.issuer}</p>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+                <Footer />
+            </div>
+        );
+    }
+
+    if (templateId === 'btech-mech-wajiha') {
+        return (
+            <BtechMechClassicTemplate
+                portfolio={portfolio}
+                about={about}
+                skills={skills}
+                projects={projects}
+                certifications={certifications}
+                exportMode={exportMode}
+                EditableText={EditableText}
+                ProjectAttachments={ProjectAttachments}
+                commitRoot={commitRoot}
+                commitMeta={commitMeta}
+                commitProject={commitProject}
+                Footer={Footer}
+            />
+        );
+    }
+
+    // BTech Electrical Engineering Template
+    if (templateId === 'btech-eee') {
+        const meta = portfolio.meta || {};
+        const fullName = meta.fullName || 'B.Tech Electrical Student';
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-yellow-50 to-amber-50 text-slate-900 font-sans">
+                <header className="px-6 py-20 bg-gradient-to-r from-yellow-600 to-amber-600 text-white">
+                    <div className="max-w-6xl mx-auto">
+                        <h1 className="text-5xl font-bold mb-2">Electrical Engineering Portfolio</h1>
+                        <EditableText as="p" className="text-lg text-yellow-100 mb-1" value={fullName} placeholder="Your Name" onCommit={(v) => commitMeta('fullName', v)} />
+                        <EditableText as="p" className="text-lg text-yellow-100" value={about} placeholder="Your intro" onCommit={(v) => commitRoot('about', v)} />
+                    </div>
+                </header>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-yellow-900">Electrical Projects & Designs</h2>
+                    <div className="grid md:grid-cols-2 gap-8">
+                        {projects.map((p, i) => (
+                            <div key={i} className="bg-white border-2 border-yellow-300 rounded-lg p-6 shadow-md hover:shadow-lg transition">
+                                <EditableText as="h3" className="text-2xl font-bold text-yellow-700 mb-3" value={p.title} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                <EditableText as="p" className="text-slate-700 mb-4" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                <ProjectAttachments p={p} />
+                                <div className="text-sm text-yellow-600 font-medium">{p.tech || 'Technologies not specified'}</div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 bg-yellow-100 max-w-6xl mx-auto w-full">
+                    <h2 className="text-3xl font-bold mb-8 text-yellow-900">Electrical Skills</h2>
+                    <div className="flex flex-wrap gap-3">
+                        {skills && skills.map(s => (
+                            <span key={s} className="px-4 py-2 bg-white border-2 border-yellow-500 text-yellow-700 rounded-full font-medium">{s}</span>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-yellow-900">Certifications & Qualifications</h2>
+                    <div className="space-y-4">
+                        {certifications.map((c, i) => (
+                            <div key={i} className="bg-yellow-100 border-l-4 border-yellow-600 p-4 rounded">
+                                <h4 className="font-bold text-yellow-900">{c.name}</h4>
+                                <p className="text-yellow-700">{c.issuer}</p>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+                <Footer />
+            </div>
+        );
+    }
+
+    // BTech Electronics Engineering Template
+    if (templateId === 'btech-ece') {
+        const meta = portfolio.meta || {};
+        const fullName = meta.fullName || 'B.Tech Electronics Student';
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 text-slate-900 font-sans">
+                <header className="px-6 py-20 bg-gradient-to-r from-purple-600 to-pink-600 text-white">
+                    <div className="max-w-6xl mx-auto">
+                        <h1 className="text-5xl font-bold mb-2">Electronics & Communication Portfolio</h1>
+                        <EditableText as="p" className="text-lg text-purple-100 mb-1" value={fullName} placeholder="Your Name" onCommit={(v) => commitMeta('fullName', v)} />
+                        <EditableText as="p" className="text-lg text-purple-100" value={about} placeholder="Your intro" onCommit={(v) => commitRoot('about', v)} />
+                    </div>
+                </header>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-purple-900">Electronics Projects</h2>
+                    <div className="grid md:grid-cols-2 gap-8">
+                        {projects.map((p, i) => (
+                            <div key={i} className="bg-white border-2 border-purple-300 rounded-lg p-6 shadow-md hover:shadow-lg transition">
+                                <EditableText as="h3" className="text-2xl font-bold text-purple-700 mb-3" value={p.title} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                <EditableText as="p" className="text-slate-700 mb-4" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                <ProjectAttachments p={p} />
+                                <div className="text-sm text-purple-600 font-medium">{p.tech || 'Components & tools not specified'}</div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 bg-purple-100 max-w-6xl mx-auto w-full">
+                    <h2 className="text-3xl font-bold mb-8 text-purple-900">Electronics Expertise</h2>
+                    <div className="flex flex-wrap gap-3">
+                        {skills && skills.map(s => (
+                            <span key={s} className="px-4 py-2 bg-white border-2 border-purple-500 text-purple-700 rounded-full font-medium">{s}</span>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-purple-900">Certifications</h2>
+                    <div className="space-y-4">
+                        {certifications.map((c, i) => (
+                            <div key={i} className="bg-purple-100 border-l-4 border-purple-600 p-4 rounded">
+                                <h4 className="font-bold text-purple-900">{c.name}</h4>
+                                <p className="text-purple-700">{c.issuer}</p>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+                <Footer />
+            </div>
+        );
+    }
+
+    // BTech Robotics Template
+    if (templateId === 'btech-robo') {
+        const meta = portfolio.meta || {};
+        const fullName = meta.fullName || 'B.Tech Robotics Student';
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-cyan-50 to-teal-50 text-slate-900 font-sans">
+                <header className="px-6 py-20 bg-gradient-to-r from-cyan-600 to-teal-600 text-white">
+                    <div className="max-w-6xl mx-auto">
+                        <h1 className="text-5xl font-bold mb-2">Robotics & Automation Portfolio</h1>
+                        <EditableText as="p" className="text-lg text-cyan-100 mb-1" value={fullName} placeholder="Your Name" onCommit={(v) => commitMeta('fullName', v)} />
+                        <EditableText as="p" className="text-lg text-cyan-100" value={about} placeholder="Your intro" onCommit={(v) => commitRoot('about', v)} />
+                    </div>
+                </header>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-cyan-900">Robotics & Automation Projects</h2>
+                    <div className="grid md:grid-cols-2 gap-8">
+                        {projects.map((p, i) => (
+                            <div key={i} className="bg-white border-2 border-cyan-300 rounded-lg p-6 shadow-md hover:shadow-lg transition">
+                                <EditableText as="h3" className="text-2xl font-bold text-cyan-700 mb-3" value={p.title} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                <EditableText as="p" className="text-slate-700 mb-4" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                <ProjectAttachments p={p} />
+                                <div className="text-sm text-cyan-600 font-medium">{p.tech || 'Robotics platforms & tools not specified'}</div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 bg-cyan-100 max-w-6xl mx-auto w-full">
+                    <h2 className="text-3xl font-bold mb-8 text-cyan-900">Robotics Skills</h2>
+                    <div className="flex flex-wrap gap-3">
+                        {skills && skills.map(s => (
+                            <span key={s} className="px-4 py-2 bg-white border-2 border-cyan-500 text-cyan-700 rounded-full font-medium">{s}</span>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-cyan-900">Certifications & Awards</h2>
+                    <div className="space-y-4">
+                        {certifications.map((c, i) => (
+                            <div key={i} className="bg-cyan-100 border-l-4 border-cyan-600 p-4 rounded">
+                                <h4 className="font-bold text-cyan-900">{c.name}</h4>
+                                <p className="text-cyan-700">{c.issuer}</p>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+                <Footer />
+            </div>
+        );
+    }
+
+    // BArch Electronics Engineering Template
+    if (templateId === 'barch-ece') {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-purple-50 to-pink-50 text-slate-900 font-sans">
+                <header className="px-6 py-20 bg-gradient-to-r from-purple-600 to-pink-600 text-white">
+                    <h1 className="text-5xl font-bold mb-4">Electronics Engineering Portfolio</h1>
+                    <EditableText as="p" className="text-lg text-purple-100" value={about} placeholder="Your intro" onCommit={(v) => commitRoot('about', v)} />
+                </header>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-purple-900">Electronics Projects</h2>
+                    <div className="grid md:grid-cols-2 gap-8">
+                        {projects.map((p, i) => (
+                            <div key={i} className="bg-white border-2 border-purple-300 rounded-lg p-6 shadow-md hover:shadow-lg transition">
+                                <EditableText as="h3" className="text-2xl font-bold text-purple-700 mb-3" value={p.title} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                <EditableText as="p" className="text-slate-700 mb-4" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                <ProjectAttachments p={p} />
+                                <div className="text-sm text-purple-600 font-medium">{p.tech || 'Components & tools not specified'}</div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 bg-purple-100 max-w-6xl mx-auto w-full">
+                    <h2 className="text-3xl font-bold mb-8 text-purple-900">Electronics Expertise</h2>
+                    <div className="flex flex-wrap gap-3">
+                        {skills && skills.map(s => (
+                            <span key={s} className="px-4 py-2 bg-white border-2 border-purple-500 text-purple-700 rounded-full font-medium">{s}</span>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-purple-900">Certifications</h2>
+                    <div className="space-y-4">
+                        {certifications.map((c, i) => (
+                            <div key={i} className="bg-purple-100 border-l-4 border-purple-600 p-4 rounded">
+                                <h4 className="font-bold text-purple-900">{c.name}</h4>
+                                <p className="text-purple-700">{c.issuer}</p>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+                <Footer />
+            </div>
+        );
+    }
+
+    // BArch Robotics Template
+    if (templateId === 'barch-robo') {
+        return (
+            <div className="min-h-screen bg-gradient-to-br from-cyan-50 to-teal-50 text-slate-900 font-sans">
+                <header className="px-6 py-20 bg-gradient-to-r from-cyan-600 to-teal-600 text-white">
+                    <h1 className="text-5xl font-bold mb-4">Robotics Portfolio</h1>
+                    <EditableText as="p" className="text-lg text-cyan-100" value={about} placeholder="Your intro" onCommit={(v) => commitRoot('about', v)} />
+                </header>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-cyan-900">Robotics & Automation Projects</h2>
+                    <div className="grid md:grid-cols-2 gap-8">
+                        {projects.map((p, i) => (
+                            <div key={i} className="bg-white border-2 border-cyan-300 rounded-lg p-6 shadow-md hover:shadow-lg transition">
+                                <EditableText as="h3" className="text-2xl font-bold text-cyan-700 mb-3" value={p.title} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                <EditableText as="p" className="text-slate-700 mb-4" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                <ProjectAttachments p={p} />
+                                <div className="text-sm text-cyan-600 font-medium">{p.tech || 'Robotics platforms & tools not specified'}</div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 bg-cyan-100 max-w-6xl mx-auto w-full">
+                    <h2 className="text-3xl font-bold mb-8 text-cyan-900">Robotics Skills</h2>
+                    <div className="flex flex-wrap gap-3">
+                        {skills && skills.map(s => (
+                            <span key={s} className="px-4 py-2 bg-white border-2 border-cyan-500 text-cyan-700 rounded-full font-medium">{s}</span>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="px-6 py-16 max-w-6xl mx-auto">
+                    <h2 className="text-3xl font-bold mb-8 text-cyan-900">Certifications & Awards</h2>
+                    <div className="space-y-4">
+                        {certifications.map((c, i) => (
+                            <div key={i} className="bg-cyan-100 border-l-4 border-cyan-600 p-4 rounded">
+                                <h4 className="font-bold text-cyan-900">{c.name}</h4>
+                                <p className="text-cyan-700">{c.issuer}</p>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+                <Footer />
+            </div>
+        );
+    }
+
+    // BArch Portfolio Book Template
+    if (templateId === 'barch-portfolio-a') {
+        const meta = portfolio.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
+        const fullName = meta.fullName || 'Architecture Student';
+        const role = meta.role || 'B.Arch Portfolio';
+        const college = meta.college || 'School of Architecture';
+        const contactEmail = meta.contactEmail || 'contact@example.com';
+        const linkedinUrl = meta.linkedinUrl || '';
+        const heroImage = meta.heroImage || projects?.[0]?.image || '';
+
+        return (
+            <div className="min-h-screen bg-[#f4f0e8] text-[#17120e] font-serif">
+                <header className="border-b border-[#cfc4b2]">
+                    <div className="max-w-6xl mx-auto px-6 py-10 flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
+                        <div>
+                            <EditableText as="p" className="text-xs uppercase tracking-[0.25em] text-[#6a5d4f]" value={role} placeholder="Role" onCommit={(v) => commitMeta('role', v)} />
+                            <EditableText as="h1" className="text-4xl md:text-6xl tracking-tight mt-2" value={fullName} placeholder="Your Name" onCommit={(v) => commitMeta('fullName', v)} />
+                            <p className="text-sm text-[#554a3d] mt-3">{college}</p>
+                        </div>
+                        <div className="text-sm text-[#554a3d] space-y-1">
+                            <a href={`mailto:${contactEmail}`} className="block hover:underline">{contactEmail}</a>
+                            {linkedinUrl && (
+                                <a href={linkedinUrl} target="_blank" rel="noopener noreferrer" className="block hover:underline break-all">
+                                    {linkedinUrl}
+                                </a>
+                            )}
+                        </div>
+                    </div>
+                </header>
+
+                <section className="max-w-6xl mx-auto px-6 py-10 grid md:grid-cols-2 gap-8 items-start">
+                    <div className="border border-[#d9cfbf] bg-[#ede3d4] rounded-2xl p-6">
+                        <h2 className="text-xs uppercase tracking-[0.2em] text-[#6a5d4f] mb-4">About</h2>
+                        <EditableText as="p" className="leading-7 text-[#2d241c]" value={about} placeholder="Write your About section." onCommit={(v) => commitRoot('about', v)} />
+                    </div>
+                    <div className="rounded-2xl overflow-hidden border border-[#d9cfbf] bg-[#dfd5c5] min-h-[280px]">
+                        {heroImage ? (
+                            <img src={heroImage} alt={`Hero for ${fullName}`} className="w-full h-full object-cover min-h-[280px]" />
+                        ) : (
+                            <div className="min-h-[280px] w-full flex items-center justify-center text-[#6a5d4f] px-6 text-sm">
+                                Add a hero image URL in Profile settings.
+                            </div>
+                        )}
+                    </div>
+                </section>
+
+                <section className="max-w-6xl mx-auto px-6 pb-12">
+                    <h2 className="text-xs uppercase tracking-[0.2em] text-[#6a5d4f] mb-5">Selected Works</h2>
+                    <div className="grid md:grid-cols-2 gap-6">
+                        {projects.map((p, i) => {
+                            const projectImage = p.image || p.imageUrl || '';
+                            return (
+                                <article key={i} className="bg-[#fffaf3] border border-[#d9cfbf] rounded-2xl overflow-hidden">
+                                    {projectImage ? (
+                                        <img src={projectImage} alt={p.title || `Project ${i + 1}`} className="w-full h-64 object-cover" />
+                                    ) : (
+                                        <div className="w-full h-64 bg-[#e7dccb] flex items-center justify-center text-[#6a5d4f] text-sm">
+                                            Project board image
+                                        </div>
+                                    )}
+                                    <div className="p-5">
+                                        <EditableText as="h3" className="text-xl" value={p.title || `Project ${i + 1}`} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                        <EditableText as="p" className="text-sm text-[#5d5144] mt-2" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                        <ProjectAttachments p={p} showImage={false} />
+                                        <p className="text-xs uppercase tracking-[0.15em] text-[#7a6f61] mt-4">{p.year || 'Year not specified'}</p>
+                                    </div>
+                                </article>
+                            );
+                        })}
+                    </div>
+                </section>
+
+                <section className="max-w-6xl mx-auto px-6 pb-16 grid md:grid-cols-2 gap-6">
+                    <div className="bg-[#fffaf3] border border-[#d9cfbf] rounded-2xl p-6">
+                        <h2 className="text-xs uppercase tracking-[0.2em] text-[#6a5d4f] mb-4">Skills</h2>
+                        <div className="flex flex-wrap gap-2">
+                            {(skills || []).map((s) => (
+                                <span key={s} className="px-3 py-1 rounded-full border border-[#c7b9a4] text-sm text-[#4f4336]">{s}</span>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="bg-[#fffaf3] border border-[#d9cfbf] rounded-2xl p-6">
+                        <h2 className="text-xs uppercase tracking-[0.2em] text-[#6a5d4f] mb-4">Certifications</h2>
+                        <div className="space-y-3">
+                            {certifications.map((c, i) => (
+                                <div key={i} className="border-b border-[#e4d9c8] pb-2">
+                                    <p className="font-semibold text-[#2d241c]">{c.name}</p>
+                                    <p className="text-sm text-[#5d5144]">{c.issuer}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </section>
+                <Footer />
+            </div>
+        );
+    }
+
+    // BArch Slate Journal Template
+    if (templateId === 'barch-portfolio-b') {
+        const meta = portfolio.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
+        const fullName = meta.fullName || 'Architecture Student';
+        const role = meta.role || 'Design Explorer';
+        const education = meta.education || 'B.Arch';
+        const educationYears = meta.educationYears || '';
+        const experience = meta.experience || 'Studio Intern';
+        const experienceYears = meta.experienceYears || '';
+        const profileImage = meta.profileImage || '';
+
+        return (
+            <div className="min-h-screen bg-[#0f1318] text-[#e5e0d8] font-sans">
+                <section className="max-w-6xl mx-auto px-6 py-12 grid lg:grid-cols-[1.1fr_1.9fr] gap-8">
+                    <aside className="rounded-2xl border border-[#343b44] bg-[#151b22] p-6">
+                        <div className="w-28 h-28 rounded-full overflow-hidden border border-[#4b545f] bg-[#1f2731] mb-5">
+                            {profileImage ? (
+                                <img src={profileImage} alt={fullName} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-2xl text-[#9ea8b5]">
+                                    {fullName.charAt(0)}
+                                </div>
+                            )}
+                        </div>
+                        <EditableText as="h1" className="text-3xl font-semibold" value={fullName} placeholder="Your Name" onCommit={(v) => commitMeta('fullName', v)} />
+                        <EditableText as="p" className="text-[#a7b0bb] mt-1" value={role} placeholder="Role" onCommit={(v) => commitMeta('role', v)} />
+                        <EditableText as="p" className="text-sm text-[#8a95a2] mt-4 leading-6" value={about} placeholder="Write your About section." onCommit={(v) => commitRoot('about', v)} />
+
+                        <div className="mt-6 space-y-3 text-sm">
+                            <div>
+                                <p className="uppercase tracking-[0.16em] text-[#8190a0] text-xs">Education</p>
+                                <p>{education}</p>
+                                {educationYears && <p className="text-[#90a0b1]">{educationYears}</p>}
+                            </div>
+                            <div>
+                                <p className="uppercase tracking-[0.16em] text-[#8190a0] text-xs">Experience</p>
+                                <p>{experience}</p>
+                                {experienceYears && <p className="text-[#90a0b1]">{experienceYears}</p>}
+                            </div>
+                        </div>
+                    </aside>
+
+                    <main className="space-y-6">
+                        <div className="rounded-2xl border border-[#343b44] bg-[#151b22] p-6">
+                            <h2 className="text-xs uppercase tracking-[0.18em] text-[#8a95a2] mb-4">Project Timeline</h2>
+                            <div className="space-y-4">
+                                {projects.map((p, i) => (
+                                    <div key={i} className="grid grid-cols-[80px_1fr] gap-4">
+                                        <p className="text-sm text-[#9ea8b5]">{p.year || 'Year'}</p>
+                                        <div className="border-l border-[#3f4955] pl-4">
+                                            <EditableText as="h3" className="text-lg text-[#f0ebe3]" value={p.title || `Project ${i + 1}`} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                            <EditableText as="p" className="text-sm text-[#9ea8b5] mt-1" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                            <ProjectAttachments p={p} dark />
+                                            {p.tech && <p className="text-xs uppercase tracking-[0.12em] text-[#7e8a97] mt-2">{p.tech}</p>}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="grid md:grid-cols-2 gap-6">
+                            <section className="rounded-2xl border border-[#343b44] bg-[#151b22] p-6">
+                                <h2 className="text-xs uppercase tracking-[0.18em] text-[#8a95a2] mb-4">Tools</h2>
+                                <div className="flex flex-wrap gap-2">
+                                    {(skills || []).map((s) => (
+                                        <span key={s} className="px-3 py-1 rounded-full bg-[#1f2731] border border-[#3d4754] text-sm text-[#d7dfe8]">{s}</span>
+                                    ))}
+                                </div>
+                            </section>
+                            <section className="rounded-2xl border border-[#343b44] bg-[#151b22] p-6">
+                                <h2 className="text-xs uppercase tracking-[0.18em] text-[#8a95a2] mb-4">Recognition</h2>
+                                <div className="space-y-3">
+                                    {certifications.map((c, i) => (
+                                        <div key={i}>
+                                            <p className="text-[#f0ebe3]">{c.name}</p>
+                                            <p className="text-sm text-[#9ea8b5]">{c.issuer}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </section>
+                        </div>
+                    </main>
+                </section>
+                <Footer />
+            </div>
+        );
+    }
+
+
+    // Academic Professional Template
+    if (templateId === 'academic') {
+        return (
+            <div className="min-h-screen bg-slate-50 font-serif text-slate-800">
+                <div className="max-w-3xl mx-auto bg-white min-h-screen shadow-2xl p-12 md:p-20 border-x">
+                    <header className="border-b-2 border-black pb-8 mb-12">
+                        <h1 className="text-4xl font-bold uppercase tracking-widest mb-4">Portfolio</h1>
+                        <EditableText as="p" className="text-lg italic text-slate-600" value={about} placeholder="Write your About section." onCommit={(v) => commitRoot('about', v)} />
+                    </header>
+
+                    <section className="mb-12">
+                        <h2 className="text-2xl font-bold uppercase mb-6 flex items-center gap-3">
+                            <span className="w-8 h-1 bg-black"></span> Projects
+                        </h2>
+                        <div className="space-y-8">
+                            {projects.map((p, i) => (
+                                <div key={i}>
+                                    <EditableText as="h3" className="text-xl font-bold" value={p.title} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                    <EditableText as="p" className="text-slate-600 mt-1" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
+                                    <ProjectAttachments p={p} />
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+
+                    <section className="mb-12">
+                        <h2 className="text-2xl font-bold uppercase mb-6 flex items-center gap-3">
+                            <span className="w-8 h-1 bg-black"></span> Skills
+                        </h2>
+                        <p className="leading-relaxed">
+                            {skills && skills.join(" • ")}
+                        </p>
+                    </section>
+
+                    <section>
+                        <h2 className="text-2xl font-bold uppercase mb-6 flex items-center gap-3">
+                            <span className="w-8 h-1 bg-black"></span> Awards
+                        </h2>
+                        <ul className="list-disc pl-5 space-y-2">
+                            {certifications.map((c, i) => (
+                                <li key={i}>
+                                    <span className="font-bold">{c.name}</span> - {c.issuer}
+                                </li>
+                            ))}
+                        </ul>
+                    </section>
+                </div>
+                <Footer />
+            </div>
+        );
+    }
+
+    return (
+        <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
+            <div className="max-w-md text-center">
+                <div className="text-2xl font-bold">Unknown template</div>
+                <div className="mt-2 text-white/70">Template id: <span className="font-mono">{String(templateId)}</span></div>
+            </div>
+        </div>
+    );
+};
+
+const MadeWithBanner = () => (
+    <div className="fixed bottom-4 right-4 bg-black/50 backdrop-blur text-white px-3 py-1 rounded-full text-xs">
+        Built with Digital Portfolio System
+    </div>
+);
+
+const BtechBedimcode1Template = ({ portfolio, about, skills, projects, exportMode = false }) => {
+    const meta = portfolio.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
+    const fullName = meta.fullName || 'Student';
+    const role = meta.role || 'B.Tech Student';
+    const contactEmail = meta.contactEmail || 'contact@example.com';
+    const linkedinUrl = meta.linkedinUrl || '';
+    const githubUrl = meta.githubUrl || '';
+    const profileImage = meta.profileImage || '';
+
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [activeSection, setActiveSection] = useState('home');
+
+    const navLinks = useMemo(
+        () => ([
+            { id: 'home', label: 'Home' },
+            { id: 'about', label: 'About' },
+            { id: 'skills', label: 'Skills' },
+            { id: 'work', label: 'Work' },
+            { id: 'contact', label: 'Contact' },
+        ]),
+        []
+    );
+
+    useEffect(() => {
+        if (exportMode) return undefined;
+        const ids = navLinks.map((l) => l.id);
+        const observers = [];
+
+        ids.forEach((sectionId) => {
+            const el = document.getElementById(sectionId);
+            if (!el) return;
+            const obs = new IntersectionObserver(
+                (entries) => {
+                    entries.forEach((entry) => {
+                        if (entry.isIntersecting) setActiveSection(sectionId);
+                    });
+                },
+                { root: null, threshold: 0.35 }
+            );
+            obs.observe(el);
+            observers.push(obs);
+        });
+
+        return () => observers.forEach((o) => o.disconnect());
+    }, [exportMode, navLinks]);
+
+    const scrollTo = (sectionId) => {
+        const el = document.getElementById(sectionId);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    const progressForSkill = (skill, idx) => {
+        const match = String(skill || '').match(/(\d{1,3})\s*%$/);
+        if (match) return Math.max(0, Math.min(100, Number(match[1])));
+        const defaults = [95, 85, 75, 70, 65, 60];
+        return defaults[idx % defaults.length];
+    };
+
+    return (
+        <div className="min-h-screen bg-[#0b1220] text-white">
+            {!exportMode && (
+                <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0b1220]/80 backdrop-blur">
+                    <nav className="mx-auto max-w-6xl px-5 py-4 flex items-center justify-between">
+                        <button
+                            type="button"
+                            onClick={() => scrollTo('home')}
+                            className="font-semibold tracking-wide text-white hover:text-cyan-300 transition"
+                        >
+                            {fullName.split(' ')[0] || fullName}
+                        </button>
+
+                        <div className="hidden md:flex items-center gap-7 text-sm">
+                            {navLinks.map((l) => (
+                                <button
+                                    key={l.id}
+                                    type="button"
+                                    onClick={() => scrollTo(l.id)}
+                                    className={`transition ${
+                                        activeSection === l.id ? 'text-cyan-300' : 'text-white/80 hover:text-white'
+                                    }`}
+                                >
+                                    {l.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <button
+                            type="button"
+                            className="md:hidden p-2 rounded-lg border border-white/10 hover:bg-white/5 transition"
+                            onClick={() => setMenuOpen((v) => !v)}
+                            aria-label="Toggle navigation"
+                        >
+                            {menuOpen ? <X size={18} /> : <Menu size={18} />}
+                        </button>
+                    </nav>
+
+                    {menuOpen && (
+                        <div className="md:hidden border-t border-white/10 px-5 py-3">
+                            <div className="flex flex-col gap-2">
+                                {navLinks.map((l) => (
+                                    <button
+                                        key={l.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setMenuOpen(false);
+                                            scrollTo(l.id);
+                                        }}
+                                        className={`text-left px-3 py-2 rounded-lg transition ${
+                                            activeSection === l.id ? 'bg-white/10 text-cyan-300' : 'hover:bg-white/5 text-white/85'
+                                        }`}
+                                    >
+                                        {l.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </header>
+            )}
+
+            <main>
+                <section id="home" className="mx-auto max-w-6xl px-5 pt-16 pb-20">
+                    <div className="grid md:grid-cols-2 gap-10 items-center">
+                        <div>
+                            <h1 className="text-4xl md:text-5xl font-bold leading-tight">
+                                Hi,
+                                <br />
+                                I&apos;m <span className="text-cyan-300">{fullName}</span>
+                                <br />
+                                <span className="text-white/80 font-semibold">{role}</span>
+                            </h1>
+
+                            <div className="mt-7 flex flex-wrap items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={() => scrollTo('contact')}
+                                    className="px-5 py-3 rounded-xl bg-cyan-500 text-slate-950 font-semibold hover:bg-cyan-400 transition"
+                                >
+                                    Contact
+                                </button>
+                                <a
+                                    href={`mailto:${contactEmail}`}
+                                    className="px-5 py-3 rounded-xl border border-white/15 text-white/90 hover:bg-white/5 transition inline-flex items-center gap-2"
+                                >
+                                    <Mail size={16} />
+                                    <span>Email</span>
+                                </a>
+                            </div>
+
+                            <div className="mt-8 flex items-center gap-3">
+                                {linkedinUrl && (
+                                    <a
+                                        href={linkedinUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="p-3 rounded-xl border border-white/10 hover:bg-white/5 transition"
+                                        aria-label="LinkedIn"
+                                    >
+                                        <Linkedin size={18} />
+                                    </a>
+                                )}
+                                {githubUrl && (
+                                    <a
+                                        href={githubUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="p-3 rounded-xl border border-white/10 hover:bg-white/5 transition"
+                                        aria-label="GitHub"
+                                    >
+                                        <Github size={18} />
+                                    </a>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="justify-self-center w-full max-w-sm">
+                            {profileImage ? (
+                                <img
+                                    src={profileImage}
+                                    alt={`Profile of ${fullName}`}
+                                    className="w-full aspect-square object-cover rounded-[28px] border border-white/10 shadow-[0_30px_90px_-60px_rgba(34,211,238,0.9)]"
+                                />
+                            ) : (
+                                <div className="w-full aspect-square rounded-[28px] border border-white/10 bg-gradient-to-br from-cyan-500/20 via-white/5 to-blue-500/20 flex items-center justify-center">
+                                    <div className="text-6xl font-bold text-white/85">
+                                        {(fullName.trim()[0] || 'S').toUpperCase()}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </section>
+
+                <section id="about" className="mx-auto max-w-6xl px-5 py-16 border-t border-white/10">
+                    <h2 className="text-2xl md:text-3xl font-bold mb-8">About</h2>
+                    <div className="grid md:grid-cols-2 gap-10 items-start">
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                            <h3 className="font-semibold text-white/90 mb-3">Who I am</h3>
+                            <p className="text-white/75 leading-relaxed whitespace-pre-line">
+                                {about || 'Write a short professional summary in the editor to show here.'}
+                            </p>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                            <h3 className="font-semibold text-white/90 mb-3">Education</h3>
+                            <p className="text-white/75 leading-relaxed whitespace-pre-line">
+                                {meta.education || 'B.Tech (Your Branch) — Your College (Year - Year)'}
+                            </p>
+                            <div className="mt-4 text-sm text-white/60">
+                                Add this in the editor under meta.education.
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section id="skills" className="mx-auto max-w-6xl px-5 py-16 border-t border-white/10">
+                    <h2 className="text-2xl md:text-3xl font-bold mb-8">Skills</h2>
+                    {Array.isArray(skills) && skills.length > 0 ? (
+                        <div className="grid md:grid-cols-2 gap-6">
+                            {skills.slice(0, 8).map((s, idx) => {
+                                const pct = progressForSkill(s, idx);
+                                return (
+                                    <div key={`${s}-${idx}`} className="rounded-2xl border border-white/10 bg-white/5 p-5">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="font-semibold text-white/90">{String(s).replace(/\s*\d{1,3}\s*%$/, '')}</div>
+                                            <div className="text-sm text-cyan-300 font-semibold">{pct}%</div>
+                                        </div>
+                                        <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                                            <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500" style={{ width: `${pct}%` }} />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="text-white/70 rounded-2xl border border-white/10 bg-white/5 p-6">
+                            Add some skills in the editor to display them here.
+                        </div>
+                    )}
+                </section>
+
+                <section id="work" className="mx-auto max-w-6xl px-5 py-16 border-t border-white/10">
+                    <h2 className="text-2xl md:text-3xl font-bold mb-8">Work</h2>
+                    {Array.isArray(projects) && projects.length > 0 ? (
+                        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {projects.slice(0, 6).map((p, idx) => {
+                                const img = p?.image || p?.imageUrl || '';
+                                return (
+                                    <div key={idx} className="group rounded-2xl border border-white/10 bg-white/5 overflow-hidden hover:bg-white/7 transition">
+                                        <div className="h-36 bg-gradient-to-br from-cyan-500/25 via-white/5 to-blue-500/25 relative">
+                                            {img ? (
+                                                <img src={img} alt={p?.title || `Project ${idx + 1}`} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="absolute inset-0 flex items-center justify-center text-white/60 text-sm">
+                                                    Add image URL (optional)
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="p-5">
+                                            <h3 className="font-bold text-white/90">{p?.title || `Project ${idx + 1}`}</h3>
+                                            <p className="text-sm text-white/70 mt-2 line-clamp-3">{p?.desc || 'Project description not provided.'}</p>
+                                            {p?.tech && (
+                                                <div className="mt-3 text-xs text-cyan-200/90 font-medium">{p.tech}</div>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="text-white/70 rounded-2xl border border-white/10 bg-white/5 p-6">
+                            Add projects in the editor to show them here.
+                        </div>
+                    )}
+                </section>
+
+                <section id="contact" className="mx-auto max-w-6xl px-5 py-16 border-t border-white/10">
+                    <h2 className="text-2xl md:text-3xl font-bold mb-8">Contact</h2>
+                    <div className="grid md:grid-cols-2 gap-8 items-start">
+                        <div className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                            <div className="text-white/80 font-semibold">Reach me at</div>
+                            <a className="mt-2 inline-flex items-center gap-2 text-cyan-300 hover:text-cyan-200 transition" href={`mailto:${contactEmail}`}>
+                                <Mail size={16} />
+                                <span className="break-all">{contactEmail}</span>
+                            </a>
+                        </div>
+
+                        <form
+                            className="rounded-2xl border border-white/10 bg-white/5 p-6 space-y-3"
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                alert('This is a demo form. Use the email link to contact.');
+                            }}
+                        >
+                            <input className="w-full px-4 py-3 rounded-xl bg-[#0b1220] border border-white/10 outline-none focus:ring-2 focus:ring-cyan-500/60" placeholder="Name" />
+                            <input className="w-full px-4 py-3 rounded-xl bg-[#0b1220] border border-white/10 outline-none focus:ring-2 focus:ring-cyan-500/60" placeholder="Email" type="email" />
+                            <textarea className="w-full px-4 py-3 rounded-xl bg-[#0b1220] border border-white/10 outline-none focus:ring-2 focus:ring-cyan-500/60 min-h-32" placeholder="Message" />
+                            <button type="submit" className="w-full px-4 py-3 rounded-xl bg-cyan-500 text-slate-950 font-semibold hover:bg-cyan-400 transition">
+                                Send
+                            </button>
+                        </form>
+                    </div>
+                </section>
+            </main>
+
+            <footer className="border-t border-white/10 py-8">
+                <div className="mx-auto max-w-6xl px-5 flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+                    <div className="font-semibold text-white/85">{fullName}</div>
+                    <div className="text-sm text-white/55">© {new Date().getFullYear()} All rights reserved</div>
+                </div>
+            </footer>
+
+            <MadeWithBanner />
+        </div>
+    );
+};
+
+const BtechBedimcode2Template = ({ portfolio, about, skills, projects }) => {
+    const meta = portfolio.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
+    const fullName = meta.fullName || 'Student';
+    const contactEmail = meta.contactEmail || 'contact@example.com';
+    const linkedinUrl = meta.linkedinUrl || '';
+    const facultyFeedback = portfolio.facultyFeedback || '';
+
+    const [showTop, setShowTop] = useState(false);
+
+    useEffect(() => {
+        const onScroll = () => setShowTop(window.scrollY > 600);
+        onScroll();
+        window.addEventListener('scroll', onScroll, { passive: true });
+        return () => window.removeEventListener('scroll', onScroll);
+    }, []);
+
+    const qualificationItems = [
+        {
+            title: meta.education || 'B.Tech — Your Branch',
+            subtitle: meta.college || 'Your College / University',
+            time: meta.educationYears || '20XX — 20XX',
+        },
+        {
+            title: meta.experience || 'Internship / Training',
+            subtitle: meta.company || 'Company / Lab / Club',
+            time: meta.experienceYears || '20XX — 20XX',
+        },
+    ].filter((x) => String(x.title || '').trim() || String(x.subtitle || '').trim());
+
+    return (
+        <div className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900 text-white">
+            <header className="mx-auto max-w-6xl px-5 py-10">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                        <div className="text-sm text-white/60 tracking-wide uppercase">Portfolio</div>
+                        <h1 className="text-3xl md:text-4xl font-bold mt-2">{fullName}</h1>
+                        <p className="text-white/70 mt-2 max-w-2xl whitespace-pre-line">
+                            {about || 'Add your professional summary in the editor to show it here.'}
+                        </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        {linkedinUrl && (
+                            <a
+                                href={linkedinUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-4 py-2 rounded-xl border border-white/10 hover:bg-white/5 transition inline-flex items-center gap-2"
+                            >
+                                <Linkedin size={16} />
+                                <span className="text-sm">LinkedIn</span>
+                            </a>
+                        )}
+                        <a
+                            href={`mailto:${contactEmail}`}
+                            className="px-4 py-2 rounded-xl bg-cyan-500 text-slate-950 font-semibold hover:bg-cyan-400 transition inline-flex items-center gap-2"
+                        >
+                            <Mail size={16} />
+                            <span className="text-sm">Email</span>
+                        </a>
+                    </div>
+                </div>
+            </header>
+
+            <main className="mx-auto max-w-6xl px-5 pb-16 space-y-14">
+                <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                    <h2 className="text-xl font-bold">Skills</h2>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                        {Array.isArray(skills) && skills.length > 0 ? (
+                            skills.map((s) => (
+                                <span key={s} className="px-3 py-2 rounded-full bg-white/5 border border-white/10 text-sm text-white/85">
+                                    {s}
+                                </span>
+                            ))
+                        ) : (
+                            <span className="text-white/60">Add skills in the editor.</span>
+                        )}
+                    </div>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                    <h2 className="text-xl font-bold">Qualification</h2>
+                    <div className="mt-6 grid md:grid-cols-2 gap-6">
+                        {qualificationItems.map((q, i) => (
+                            <div key={i} className="rounded-2xl border border-white/10 bg-[#0b1220]/60 p-5">
+                                <div className="text-cyan-300 text-sm font-semibold">{q.time}</div>
+                                <div className="mt-2 text-lg font-bold text-white/90">{q.title}</div>
+                                <div className="mt-1 text-sm text-white/65">{q.subtitle}</div>
+                            </div>
+                        ))}
+                    </div>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                    <h2 className="text-xl font-bold">Projects</h2>
+                    <div className="mt-6 grid md:grid-cols-2 gap-5">
+                        {Array.isArray(projects) && projects.length > 0 ? (
+                            projects.map((p, i) => (
+                                <div key={i} className="rounded-2xl border border-white/10 bg-[#0b1220]/60 p-5">
+                                    <div className="font-bold text-white/90">{p.title || `Project ${i + 1}`}</div>
+                                    <div className="text-sm text-white/65 mt-2 whitespace-pre-line">{p.desc || 'Project description not provided.'}</div>
+                                    <ProjectAttachments p={p} dark />
+                                    {p.tech && <div className="mt-3 text-xs text-cyan-200/90 font-semibold">{p.tech}</div>}
+                                </div>
+                            ))
+                        ) : (
+                            <div className="text-white/60">Add projects in the editor.</div>
+                        )}
+                    </div>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                    <h2 className="text-xl font-bold">Testimonial</h2>
+                    <div className="mt-4 rounded-2xl border border-white/10 bg-[#0b1220]/60 p-5 text-white/75 whitespace-pre-line">
+                        {facultyFeedback || 'Faculty feedback will appear here once provided.'}
+                    </div>
+                </section>
+
+                <section className="rounded-2xl border border-white/10 bg-white/5 p-6">
+                    <h2 className="text-xl font-bold">Contact</h2>
+                    <div className="mt-4 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
+                        <div className="text-white/70 break-all">{contactEmail}</div>
+                        <a
+                            href={`mailto:${contactEmail}`}
+                            className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-cyan-500 text-slate-950 font-semibold hover:bg-cyan-400 transition"
+                        >
+                            <Mail size={16} />
+                            <span>Send Email</span>
+                        </a>
+                    </div>
+                </section>
+            </main>
+
+            {showTop && !exportMode && (
+                <button
+                    type="button"
+                    onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                    className="fixed bottom-6 right-6 p-3 rounded-2xl bg-white/10 border border-white/10 hover:bg-white/15 backdrop-blur transition"
+                    aria-label="Scroll to top"
+                >
+                    <ChevronUp size={18} />
+                </button>
+            )}
+
+            <MadeWithBanner />
+        </div>
+    );
+};
+
+const BtechMechClassicTemplate = ({
+    portfolio,
+    about,
+    skills,
+    projects,
+    certifications,
+    exportMode = false,
+    EditableText,
+    ProjectAttachments,
+    commitRoot,
+    commitMeta,
+    commitProject,
+    Footer,
+}) => {
+    const meta = portfolio.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
+    const fullName = meta.fullName || 'Mechanical Engineering Student';
+    const role = meta.role || 'Mechanical Engineering Portfolio';
+    const contactEmail = meta.contactEmail || 'contact@example.com';
+    const linkedinUrl = meta.linkedinUrl || '';
+    const githubUrl = meta.githubUrl || '';
+    const profileImage = meta.profileImage || projects?.find((p) => p?.image)?.image || '';
+    const [menuOpen, setMenuOpen] = useState(false);
+    const [activeSection, setActiveSection] = useState('home');
+    const [showTop, setShowTop] = useState(false);
+
+    const navLinks = useMemo(
+        () => ([
+            { id: 'about', label: 'About' },
+            { id: 'work', label: 'Work' },
+            { id: 'contact', label: 'Contact' },
+        ]),
+        []
+    );
+
+    useEffect(() => {
+        if (exportMode) return undefined;
+        const ids = ['home', ...navLinks.map((item) => item.id)];
+        const observers = [];
+
+        ids.forEach((sectionId) => {
+            const el = document.getElementById(sectionId);
+            if (!el) return;
+            const obs = new IntersectionObserver(
+                (entries) => {
+                    entries.forEach((entry) => {
+                        if (entry.isIntersecting) setActiveSection(sectionId);
+                    });
+                },
+                { root: null, threshold: 0.35 }
+            );
+            obs.observe(el);
+            observers.push(obs);
+        });
+
+        const onScroll = () => setShowTop(window.scrollY > 420);
+        onScroll();
+        window.addEventListener('scroll', onScroll, { passive: true });
+
+        return () => {
+            observers.forEach((obs) => obs.disconnect());
+            window.removeEventListener('scroll', onScroll);
+        };
+    }, [exportMode, navLinks]);
+
+    const scrollTo = (sectionId) => {
+        const el = document.getElementById(sectionId);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    const parsedSkills = (Array.isArray(skills) ? skills : []).slice(0, 8).map((skill, idx) => {
+        const raw = String(skill || '').trim();
+        const match = raw.match(/^(.*?)(?:\s*[-:]\s*|\s+)(\d{1,3})%$/) || raw.match(/^(.*?)[( ](\d{1,3})%[)]?$/);
+        const percent = Math.max(35, Math.min(100, Number(match?.[2] || [90, 80, 75, 70, 65, 60, 55, 50][idx % 8])));
+        const label = String(match?.[1] || raw || `Skill ${idx + 1}`).trim();
+        return { label, percent, accent: idx % 2 === 0 ? '#7372dd' : '#b7b6fd' };
+    });
+
+    const leftSkills = parsedSkills.filter((_, idx) => idx % 2 === 0);
+    const rightSkills = parsedSkills.filter((_, idx) => idx % 2 === 1);
+    const featuredProjects = (Array.isArray(projects) ? projects : []).slice(0, 3);
+    const getProjectImage = (project) => project?.image || project?.imageUrl || '';
+    const workHighlights = [
+        { title: 'Responsive', text: 'Layouts adapt cleanly across desktop, tablet, and mobile screens.' },
+        { title: 'Precise', text: 'Design decisions focus on clarity, usability, and practical engineering communication.' },
+        { title: 'Intuitive', text: 'Sections are structured to make technical work easy to scan and understand.' },
+        { title: 'Dynamic', text: 'Project stories, visuals, and links bring the portfolio to life.' },
+    ];
+
+    return (
+        <div className="min-h-screen bg-white text-slate-800">
+            {!exportMode && (
+                <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/95 backdrop-blur">
+                    <nav className="mx-auto flex max-w-6xl items-center justify-between px-5 py-4">
+                        <button
+                            type="button"
+                            onClick={() => scrollTo('home')}
+                            className="text-lg font-semibold tracking-wide text-[#7372dd]"
+                        >
+                            {fullName.split(' ')[0] || fullName}
+                        </button>
+
+                        <div className="hidden items-center gap-6 text-sm font-medium text-slate-600 md:flex">
+                            {navLinks.map((item) => (
+                                <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => scrollTo(item.id)}
+                                    className={activeSection === item.id ? 'text-[#7372dd]' : 'hover:text-[#7372dd]'}
+                                >
+                                    {item.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        <button
+                            type="button"
+                            className="rounded-lg border border-slate-300 p-2 md:hidden"
+                            onClick={() => setMenuOpen((value) => !value)}
+                            aria-label="Toggle navigation"
+                        >
+                            {menuOpen ? <X size={18} /> : <Menu size={18} />}
+                        </button>
+                    </nav>
+
+                    {menuOpen && (
+                        <div className="border-t border-slate-200 px-5 py-3 md:hidden">
+                            <div className="flex flex-col gap-2">
+                                {navLinks.map((item) => (
+                                    <button
+                                        key={item.id}
+                                        type="button"
+                                        onClick={() => {
+                                            setMenuOpen(false);
+                                            scrollTo(item.id);
+                                        }}
+                                        className="rounded-lg px-3 py-2 text-left text-slate-700 hover:bg-slate-100"
+                                    >
+                                        {item.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </header>
+            )}
+
+            <section id="home" className="px-6 pb-12 pt-24 text-center">
+                <div className="mx-auto max-w-5xl">
+                    <div className="font-['Lobster','cursive'] text-5xl text-slate-700 sm:text-6xl">Hey there!</div>
+                    <div className="mt-4 text-4xl font-semibold text-slate-700 sm:text-5xl">
+                        I am <span className="text-[#7372dd]">{fullName}</span>
+                    </div>
+                    <EditableText
+                        as="p"
+                        className="mx-auto mt-4 max-w-2xl text-lg text-slate-600"
+                        value={about}
+                        placeholder="A passionate Mechanical Engineering student building practical systems and products."
+                        onCommit={(value) => commitRoot('about', value)}
+                    />
+                    <EditableText
+                        as="p"
+                        className="mt-3 text-sm uppercase tracking-[0.28em] text-slate-400"
+                        value={role}
+                        placeholder="Mechanical Engineering Portfolio"
+                        onCommit={(value) => commitMeta('role', value)}
+                    />
+                </div>
+            </section>
+
+            <section id="about" className="bg-slate-100 px-6 py-16">
+                <div className="mx-auto max-w-6xl">
+                    <h2 className="text-center text-4xl font-bold tracking-wide text-slate-700">ABOUT</h2>
+                    <div className="mx-auto mt-4 h-1 w-24 bg-slate-300" />
+
+                    <div className="mt-12 grid gap-10 lg:grid-cols-[minmax(0,320px)_1fr]">
+                        <div>
+                            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                                {profileImage ? (
+                                    <img src={profileImage} alt={fullName} className="h-[360px] w-full object-cover" />
+                                ) : (
+                                    <div className="flex h-[360px] items-center justify-center bg-gradient-to-br from-[#d9d8ff] via-white to-[#f0efff] px-8 text-center text-slate-500">
+                                        Add a profile image in the editor to personalize this section.
+                                    </div>
+                                )}
+                            </div>
+                            <h3 className="mt-6 text-2xl font-semibold text-slate-700">Who am I?</h3>
+                            <EditableText
+                                as="p"
+                                className="mt-3 text-justify leading-7 text-slate-600"
+                                value={about}
+                                placeholder="Write a short introduction about your background, interests, and engineering focus."
+                                onCommit={(value) => commitRoot('about', value)}
+                            />
+                        </div>
+
+                        <div>
+                            <h3 className="text-2xl font-semibold tracking-wide text-slate-700">SKILLS</h3>
+                            <div id="skills" className="mt-6 grid gap-6 lg:grid-cols-2">
+                                {[leftSkills, rightSkills].map((column, columnIndex) => (
+                                    <div key={columnIndex} className="space-y-5">
+                                        {column.length > 0 ? column.map((skillItem) => (
+                                            <div key={`${skillItem.label}-${skillItem.percent}`} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+                                                <div className="mb-2 flex items-center justify-between gap-4">
+                                                    <span className="font-semibold text-slate-700">{skillItem.label}</span>
+                                                    <span className="text-sm font-semibold text-slate-500">{skillItem.percent}%</span>
+                                                </div>
+                                                <div className="h-3 overflow-hidden rounded-full bg-slate-200">
+                                                    <div
+                                                        className="h-full rounded-full"
+                                                        style={{ width: `${skillItem.percent}%`, backgroundColor: skillItem.accent }}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )) : (
+                                            <div className="rounded-2xl bg-white p-5 text-slate-500 shadow-sm ring-1 ring-slate-200">
+                                                Add skills in the editor to show mechanical tools and competencies.
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="work" className="px-6 py-16">
+                <div className="mx-auto max-w-6xl">
+                    <h2 className="text-center text-4xl font-bold tracking-wide text-slate-700">WORK</h2>
+                    <div className="mx-auto mt-4 h-1 w-24 bg-slate-300" />
+
+                    <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+                        {workHighlights.map((item) => (
+                            <div key={item.title} className="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+                                <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#7372dd]/10 text-2xl font-bold text-[#7372dd]">
+                                    {item.title.charAt(0)}
+                                </div>
+                                <h3 className="mt-5 font-['Lobster','cursive'] text-3xl text-slate-700">{item.title}</h3>
+                                <p className="mt-3 leading-7 text-slate-600">{item.text}</p>
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="mt-16">
+                        <h3 className="text-center text-3xl font-semibold tracking-wide text-slate-700">PROJECT SHOWCASE</h3>
+                        <div className="mx-auto mt-8 max-w-5xl text-justify leading-7 text-slate-600">
+                            {(Array.isArray(projects) && projects.length > 0) ? (
+                                <p>
+                                    {projects[0]?.desc || 'Use this area to introduce your best mechanical engineering project, design system, lab build, or fabrication work.'}
+                                </p>
+                            ) : (
+                                <p>Add projects in the editor to populate this showcase area.</p>
+                            )}
+                        </div>
+
+                        <div className="mt-10 grid gap-6 md:grid-cols-3">
+                            {featuredProjects.length > 0 ? featuredProjects.map((project, index) => (
+                                <article key={`${project.title || 'project'}-${index}`} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+                                    <div className="aspect-[4/3] bg-slate-100">
+                                        {getProjectImage(project) ? (
+                                            <img src={getProjectImage(project)} alt={project.title || `Project ${index + 1}`} className="h-full w-full object-cover" />
+                                        ) : (
+                                            <div className="flex h-full items-center justify-center bg-gradient-to-br from-[#d9d8ff] to-white px-6 text-center text-slate-500">
+                                                Add a project image in the editor
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div className="p-5">
+                                        <EditableText
+                                            as="h4"
+                                            className="text-xl font-semibold text-slate-700"
+                                            value={project.title}
+                                            placeholder={`Project ${index + 1}`}
+                                            onCommit={(value) => commitProject(index, 'title', value)}
+                                        />
+                                        <EditableText
+                                            as="p"
+                                            className="mt-3 text-sm leading-6 text-slate-600"
+                                            value={project.desc}
+                                            placeholder="Describe this project."
+                                            onCommit={(value) => commitProject(index, 'desc', value)}
+                                        />
+                                        <ProjectAttachments p={project} />
+                                    </div>
+                                </article>
+                            )) : (
+                                [0, 1, 2].map((index) => (
+                                    <div key={index} className="flex min-h-[280px] items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-slate-50 px-6 text-center text-slate-500">
+                                        Add project details and images in the editor.
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section id="contact" className="bg-slate-100 px-6 py-16">
+                <div className="mx-auto max-w-5xl text-center">
+                    <h2 className="text-4xl font-bold tracking-wide text-slate-700">CONTACT</h2>
+                    <div className="mx-auto mt-4 h-1 w-24 bg-slate-300" />
+                    <p className="mx-auto mt-6 max-w-2xl text-slate-600">Feel free to contact me.</p>
+
+                    <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
+                        <a
+                            href={`mailto:${contactEmail}`}
+                            className="inline-flex items-center gap-2 rounded-full bg-[#7372dd] px-5 py-3 text-sm font-semibold text-white hover:bg-[#6261d2]"
+                        >
+                            <Mail size={16} />
+                            <span>{contactEmail}</span>
+                        </a>
+                        {linkedinUrl && (
+                            <a
+                                href={linkedinUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 rounded-full bg-[#0077b5] px-5 py-3 text-sm font-semibold text-white"
+                            >
+                                <Linkedin size={16} />
+                                <span>LinkedIn</span>
+                            </a>
+                        )}
+                        {githubUrl && (
+                            <a
+                                href={githubUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-3 text-sm font-semibold text-white"
+                            >
+                                <Github size={16} />
+                                <span>GitHub</span>
+                            </a>
+                        )}
+                    </div>
+
+                    {Array.isArray(certifications) && certifications.length > 0 && (
+                        <div className="mt-12 rounded-3xl bg-white p-8 text-left shadow-sm ring-1 ring-slate-200">
+                            <h3 className="text-2xl font-semibold text-slate-700">Certifications</h3>
+                            <div className="mt-5 space-y-3">
+                                {certifications.map((item, index) => (
+                                    <div key={`${item.name || 'cert'}-${index}`} className="rounded-2xl border border-slate-200 px-4 py-3">
+                                        <div className="font-semibold text-slate-700">{item.name || `Certification ${index + 1}`}</div>
+                                        <div className="text-sm text-slate-500">{item.issuer || 'Issuer'}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </section>
+
+            {!exportMode && showTop && (
+                <button
+                    type="button"
+                    onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+                    className="fixed bottom-6 right-6 rounded-full bg-[#7372dd] p-3 text-white shadow-lg"
+                    aria-label="Scroll to top"
+                >
+                    <ChevronUp size={18} />
+                </button>
+            )}
+
             <Footer />
         </div>
     );
 };
 
 export default PortfolioView;
+
+
+
+

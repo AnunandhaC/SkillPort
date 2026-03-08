@@ -7,6 +7,12 @@ export const useAuth = () => useContext(AuthContext);
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);   // { id, email, role, name, program }
   const [loading, setLoading] = useState(true);
+  const normalizeProgram = (value) => {
+    const v = String(value || '').trim().toLowerCase();
+    if (v === 'barch' || v === 'b.arch' || v === 'b arch') return 'barch';
+    if (v === 'btech' || v === 'b.tech' || v === 'b tech') return 'btech';
+    return null;
+  };
 
   // Load session + profile on app start (failsafe: never block rendering forever)
   useEffect(() => {
@@ -31,7 +37,7 @@ export const AuthProvider = ({ children }) => {
         email: authUser.email,
         role: metadata.role || 'student',
         name: metadata.full_name || authUser.email?.split('@')[0] || 'User',
-        program: metadata.program || null,
+        program: normalizeProgram(metadata.program),
       };
 
       try {
@@ -45,12 +51,23 @@ export const AuthProvider = ({ children }) => {
         if (error) throw error;
 
         if (profile) {
+          const resolvedProgram =
+            normalizeProgram(profile.program) || normalizeProgram(metadata.program) || null;
+
+          if (!normalizeProgram(profile.program) && resolvedProgram) {
+            // Self-heal legacy/missing profile program so future logins are consistent.
+            await supabase
+              .from('profiles')
+              .update({ program: resolvedProgram })
+              .eq('id', profile.id);
+          }
+
           setUserSafe({
             id: profile.id,
             email: profile.email,
             role: profile.role,
             name: profile.full_name,
-            program: profile.program,
+            program: resolvedProgram,
           });
         } else {
           // Create profile if missing (if this fails due to RLS, still allow fallback)

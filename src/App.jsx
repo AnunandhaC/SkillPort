@@ -15,6 +15,7 @@ const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const PortfolioEditor = lazy(() => import('./pages/PortfolioEditor'));
 const PortfolioView = lazy(() => import('./pages/PortfolioView'));
 const ResumeBuilder = lazy(() => import('./pages/ResumeBuilder'));
+const DesignLab = lazy(() => import('./pages/DesignLab'));
 
 // Loading component
 const LoadingFallback = () => (
@@ -45,6 +46,7 @@ function App() {
                                 <Route path="/admin-dashboard" element={<AdminDashboard />} />
                                 <Route path="/portfolio-editor" element={<PortfolioEditor />} />
                                 <Route path="/resume-builder" element={<ResumeBuilder />} />
+                                <Route path="/design-lab" element={<DesignLab />} />
                             </Route>
                         </Routes>
                     </Suspense>

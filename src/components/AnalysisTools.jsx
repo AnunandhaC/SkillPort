@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+﻿import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { useData } from '../context/DataProvider';
 import { AlertCircle, Briefcase, GraduationCap, Download, FileText, FileDown, Send, Bot, User, Sparkles } from 'lucide-react';
 
@@ -26,7 +26,7 @@ export const SuggestionEngine = ({ portfolio }) => {
                     initialMessages.push({
                         id: Date.now() + index + 1,
                         type: 'bot',
-                        text: `💡 ${suggestion}`
+                        text: `ðŸ’¡ ${suggestion}`
                     });
                 });
             } else {
@@ -98,10 +98,27 @@ export const SuggestionEngine = ({ portfolio }) => {
             const template = portfolio?.templateId || 'modern';
             const templateNames = {
                 modern: 'Modern Minimal',
-                creative: 'Creative Bold',
-                academic: 'Academic Professional'
+                academic: 'Academic Professional',
+                btech: 'BTech General',
+                'btech-bedimcode-1': 'BTech Classic (Bedimcode style)',
+                'btech-bedimcode-2': 'BTech Sections (Qualification style)',
+                'btech-cs': 'BTech Computer Science',
+                'btech-cs-unicons': 'BTech CS Unicons Sections',
+                'btech-mech': 'BTech Mechanical',
+                'btech-mech-wajiha': 'Mechanical Portfolio Classic',
+                'btech-eee': 'BTech Electrical',
+                'btech-ece': 'BTech Electronics',
+                'btech-robo': 'BTech Robotics',
+                'barch-red': 'BArch Red Studio',
+                'barch-cs': 'BArch Computer Science',
+                'barch-mech': 'BArch Mechanical',
+                'barch-eee': 'BArch Electrical',
+                'barch-ece': 'BArch Electronics',
+                'barch-robo': 'BArch Robotics',
+                'barch-portfolio-a': 'BArch Portfolio Book',
+                'barch-portfolio-b': 'BArch Slate Journal'
             };
-            return `You're currently using the "${templateNames[template] || 'Modern Minimal'}" template. Each template has its own style:\n- Modern Minimal: Clean and professional\n- Creative Bold: Eye-catching and dynamic\n- Academic Professional: Structured and detailed\n\nYou can change templates anytime in the Portfolio Editor!`;
+            return `You're currently using the "${templateNames[template] || 'Modern Minimal'}" template. Each template has its own unique style tailored for your program and department.\n\nYou can change templates anytime in the Portfolio Editor!`;
         }
 
         // General portfolio questions
@@ -380,274 +397,311 @@ export const ResumeGenerator = ({ portfolio }) => {
 };
 
 export const PortfolioDownloader = ({ portfolio }) => {
-    const generateHTMLContent = () => {
-        if (!portfolio) return '';
-
-        const { about, skills, projects, certifications, templateId } = portfolio;
-        const studentId = portfolio.studentId || 'portfolio';
-
-        // Generate HTML based on template
-        let htmlContent = '';
-        
-        if (templateId === 'modern') {
-            htmlContent = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portfolio - ${studentId}</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1e293b; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 0 20px; }
-        header { padding: 80px 0; }
-        h1 { font-size: 3.5rem; font-weight: 700; margin-bottom: 24px; letter-spacing: -0.02em; }
-        .about { font-size: 1.25rem; color: #475569; max-width: 42rem; line-height: 1.75; }
-        section { padding: 80px 0; }
-        .bg-light { background-color: #f8fafc; }
-        h2 { font-size: 2rem; font-weight: 700; margin-bottom: 40px; }
-        .projects-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 32px; }
-        .project-card { background: white; padding: 32px; border-radius: 16px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-        .project-card h3 { font-size: 1.25rem; font-weight: 700; margin-bottom: 12px; }
-        .project-card p { color: #475569; }
-        .skills { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 32px; }
-        .skill-tag { padding: 8px 16px; background: #f1f5f9; border-radius: 8px; color: #334155; font-weight: 500; }
-        .certifications { display: flex; flex-direction: column; gap: 16px; }
-        .cert-item { display: flex; justify-content: space-between; padding-bottom: 16px; border-bottom: 1px solid #e2e8f0; }
-        .cert-item:last-child { border-bottom: none; }
-        .cert-name { font-weight: 500; }
-        .cert-issuer { color: #64748b; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>Student Portfolio</h1>
-            <p class="about">${about || 'No description available.'}</p>
-        </header>
-
-        <section class="bg-light">
-            <div class="container">
-                <h2>Featured Projects</h2>
-                <div class="projects-grid">
-                    ${projects && projects.length > 0 ? projects.map(p => `
-                        <div class="project-card">
-                            <h3>${p.title || 'Untitled Project'}</h3>
-                            <p>${p.desc || 'No description available.'}</p>
-                        </div>
-                    `).join('') : '<p>No projects available.</p>'}
-                </div>
-            </div>
-        </section>
-
-        <section>
-            <div class="container">
-                <h2>Skills & Certifications</h2>
-                <div class="skills">
-                    ${skills && skills.length > 0 ? skills.map(s => `<span class="skill-tag">${s}</span>`).join('') : '<p>No skills listed.</p>'}
-                </div>
-                <div class="certifications">
-                    ${certifications && certifications.length > 0 ? certifications.map(c => `
-                        <div class="cert-item">
-                            <span class="cert-name">${c.name || 'Unnamed Certification'}</span>
-                            <span class="cert-issuer">${c.issuer || 'Unknown Issuer'}</span>
-                        </div>
-                    `).join('') : '<p>No certifications available.</p>'}
-                </div>
-            </div>
-        </section>
-    </div>
-</body>
-</html>`;
-        } else {
-            // Fallback template
-            htmlContent = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portfolio - ${studentId}</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: serif; line-height: 1.8; color: #1e293b; background: #f8fafc; }
-        .container { max-width: 800px; margin: 0 auto; background: white; min-height: 100vh; padding: 80px 40px; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
-        header { border-bottom: 2px solid #000; padding-bottom: 32px; margin-bottom: 48px; }
-        h1 { font-size: 2.5rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 16px; }
-        .about { font-size: 1.125rem; font-style: italic; color: #475569; }
-        h2 { font-size: 1.5rem; font-weight: 700; text-transform: uppercase; margin-bottom: 24px; display: flex; align-items: center; gap: 12px; }
-        h2::before { content: ''; width: 32px; height: 2px; background: #000; }
-        section { margin-bottom: 48px; }
-        .project { margin-bottom: 32px; }
-        .project h3 { font-size: 1.25rem; font-weight: 700; margin-bottom: 8px; }
-        .project p { color: #475569; }
-        .skills { line-height: 2; }
-        ul { list-style: disc; padding-left: 20px; }
-        li { margin-bottom: 8px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <header>
-            <h1>Portfolio</h1>
-            <p class="about">${about || 'No description available.'}</p>
-        </header>
-
-        <section>
-            <h2>Projects</h2>
-            ${projects && projects.length > 0 ? projects.map(p => `
-                <div class="project">
-                    <h3>${p.title || 'Untitled Project'}</h3>
-                    <p>${p.desc || 'No description available.'}</p>
-                </div>
-            `).join('') : '<p>No projects available.</p>'}
-        </section>
-
-        <section>
-            <h2>Skills</h2>
-            <p class="skills">${skills && skills.length > 0 ? skills.join(' • ') : 'No skills listed.'}</p>
-        </section>
-
-        <section>
-            <h2>Awards</h2>
-            <ul>
-                ${certifications && certifications.length > 0 ? certifications.map(c => `
-                    <li><strong>${c.name || 'Unnamed Certification'}</strong> - ${c.issuer || 'Unknown Issuer'}</li>
-                `).join('') : '<li>No certifications available.</li>'}
-            </ul>
-        </section>
-    </div>
-</body>
-</html>`;
+    const getEffectivePortfolio = () => {
+        if (!portfolio) return null;
+        try {
+            const draftRaw = localStorage.getItem(`dps_preview_draft_${portfolio.studentId}`);
+            if (!draftRaw) return portfolio;
+            const draft = JSON.parse(draftRaw);
+            if (draft && typeof draft === 'object') {
+                return { ...portfolio, ...draft, studentId: portfolio.studentId };
+            }
+        } catch (e) {
+            console.warn('Failed to read local draft for download:', e);
         }
+        return portfolio;
+    };
 
-        return htmlContent;
+    const resolveTheme = (templateId) => {
+        if (String(templateId || '').startsWith('barch-')) {
+            return {
+                cover: 'Architecture Portfolio',
+                bg: '#e9e2d7',
+                page: '#fbf7f1',
+                text: '#1f1a16',
+                muted: '#6f6253',
+                accent: '#7c4a2e',
+                font: "Georgia, 'Times New Roman', serif",
+            };
+        }
+        if (String(templateId || '').startsWith('btech-')) {
+            return {
+                cover: 'BTech Portfolio',
+                bg: '#0b1220',
+                page: '#111c32',
+                text: '#e2e8f0',
+                muted: '#94a3b8',
+                accent: '#38bdf8',
+                font: "'Segoe UI', Tahoma, sans-serif",
+            };
+        }
+        if (templateId === 'academic') {
+            return {
+                cover: 'Academic Portfolio',
+                bg: '#f8fafc',
+                page: '#ffffff',
+                text: '#111827',
+                muted: '#4b5563',
+                accent: '#111827',
+                font: "Georgia, 'Times New Roman', serif",
+            };
+        }
+        return {
+            cover: 'Student Portfolio',
+            bg: '#f1f5f9',
+            page: '#ffffff',
+            text: '#0f172a',
+            muted: '#475569',
+            accent: '#2563eb',
+            font: "'Segoe UI', Tahoma, sans-serif",
+        };
+    };
+
+    const generateHTMLContent = () => {
+        const source = getEffectivePortfolio();
+        if (!source) return '';
+
+        const { about, skills, projects, certifications, templateId } = source;
+        const studentId = source.studentId || 'portfolio';
+        const meta = source.meta && typeof source.meta === 'object' ? source.meta : {};
+        const fullName = meta.fullName || studentId || 'Student';
+        const role = meta.role || 'Student Portfolio';
+        const theme = resolveTheme(templateId);
+
+        return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio - ${studentId}</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: ${theme.font}; background: ${theme.bg}; color: ${theme.text}; }
+        .book { max-width: 210mm; margin: 0 auto; }
+        .page {
+            width: 210mm;
+            min-height: 297mm;
+            padding: 18mm;
+            background: ${theme.page};
+            border-bottom: 1px solid ${theme.muted};
+            page-break-after: always;
+            break-after: page;
+        }
+        .page:last-child { page-break-after: auto; break-after: auto; }
+        .cover { display: flex; flex-direction: column; justify-content: space-between; background: linear-gradient(160deg, ${theme.page}, ${theme.bg}); }
+        .smallcaps { letter-spacing: .2em; text-transform: uppercase; font-size: 11px; color: ${theme.muted}; }
+        h1 { font-size: 48px; line-height: 1.05; margin-top: 12px; }
+        h2 { font-size: 30px; margin-bottom: 14px; }
+        .muted { color: ${theme.muted}; }
+        .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .chip { border: 1px solid ${theme.muted}; border-radius: 999px; padding: 5px 11px; font-size: 12px; }
+        .cert { padding: 10px 0; border-bottom: 1px solid ${theme.muted}; }
+        .project-title { font-size: 36px; line-height: 1.1; margin-bottom: 10px; }
+        .project-meta { margin-top: 12px; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: ${theme.muted}; }
+        .project-image {
+            margin-top: 16px;
+            width: 100%;
+            height: 140mm;
+            object-fit: cover;
+            border: 1px solid ${theme.muted};
+            background: ${theme.bg};
+        }
+        .no-image {
+            margin-top: 16px;
+            width: 100%;
+            height: 140mm;
+            border: 1px dashed ${theme.muted};
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: ${theme.muted};
+            font-size: 13px;
+        }
+        .linkline { margin-top: 8px; font-size: 12px; color: ${theme.muted}; overflow-wrap: anywhere; }
+        a { color: ${theme.accent}; }
+        @media print {
+            body { background: white; }
+            .page { border-bottom: 0; }
+        }
+    </style>
+</head>
+<body>
+    <main class="book">
+        <section class="page cover">
+            <div>
+                <p class="smallcaps">${theme.cover}</p>
+                <h1>${fullName}</h1>
+                <p style="margin-top:10px; font-size:18px;" class="muted">${role}</p>
+            </div>
+            <p class="smallcaps">Digital Portfolio System</p>
+        </section>
+
+        <section class="page">
+            <p class="smallcaps">Profile</p>
+            <h2>About</h2>
+            <p class="muted" style="line-height:1.8;">${about || 'No description available.'}</p>
+
+            <h2 style="margin-top:28px;">Skills</h2>
+            <div class="chips">
+                ${skills && skills.length > 0 ? skills.map(s => `<span class="chip">${s}</span>`).join('') : '<p class="muted">No skills listed.</p>'}
+            </div>
+
+            <h2 style="margin-top:28px;">Certifications</h2>
+            <div>
+                ${certifications && certifications.length > 0 ? certifications.map(c => `
+                    <div class="cert">
+                        <strong>${c.name || 'Unnamed Certification'}</strong>
+                        <div class="muted">${c.issuer || 'Unknown Issuer'}</div>
+                    </div>
+                `).join('') : '<p class="muted">No certifications available.</p>'}
+            </div>
+        </section>
+
+        ${projects && projects.length > 0 ? projects.map((p, i) => `
+            <section class="page">
+                <p class="smallcaps">Project ${i + 1}</p>
+                <h2 class="project-title">${p.title || `Project ${i + 1}`}</h2>
+                <p class="muted" style="line-height:1.8;">${p.desc || 'No description available.'}</p>
+                <p class="project-meta">${p.year || 'Year not specified'}${p.tech ? ` • ${p.tech}` : ''}</p>
+                ${p.repoUrl ? `<p class="linkline">Repository: <a href="${p.repoUrl}" target="_blank" rel="noopener noreferrer">${p.repoUrl}</a></p>` : ''}
+                ${p.pdfUrl ? `<p class="linkline">Project PDF: <a href="${p.pdfUrl}" target="_blank" rel="noopener noreferrer">${p.pdfName || 'Open PDF'}</a></p>` : ''}
+                ${(p.image || p.imageUrl)
+                    ? `<img class="project-image" src="${p.image || p.imageUrl}" alt="${p.title || `Project ${i + 1}`}" />`
+                    : '<div class="no-image">Add project image URL to show board here</div>'}
+            </section>
+        `).join('') : `
+            <section class="page">
+                <p class="smallcaps">Projects</p>
+                <h2>Selected Works</h2>
+                <p class="muted">No projects available.</p>
+            </section>
+        `}
+    </main>
+</body>
+</html>`;
     };
 
     const handleDownloadPDF = async () => {
-        if (!portfolio) return;
+        const source = getEffectivePortfolio();
+        if (!source) return;
 
-        // Lazy load jsPDF only when needed
         const { default: jsPDF } = await import('jspdf');
         const doc = new jsPDF('p', 'mm', 'a4');
         const pageWidth = doc.internal.pageSize.getWidth();
         const margin = 20;
-        let yPos = margin;
+        const templateId = source?.templateId || '';
+        const meta = source?.meta && typeof source.meta === 'object' ? source.meta : {};
+        const fullName = meta.fullName || source.studentId || 'Student';
+        const role = meta.role || 'Student Portfolio';
+        const theme = resolveTheme(templateId);
 
-        // Header
-        doc.setFontSize(24);
+        doc.setFontSize(30);
         doc.setFont(undefined, 'bold');
-        doc.text('Portfolio', margin, yPos);
-        yPos += 10;
-
+        doc.text(theme.cover, margin, 52);
+        doc.setFontSize(22);
+        doc.text(fullName, margin, 70);
         doc.setFontSize(12);
         doc.setFont(undefined, 'normal');
-        doc.text(`Student ID: ${portfolio.studentId || 'N/A'}`, margin, yPos);
-        yPos += 15;
+        doc.text(role, margin, 80);
 
-        // About Section
+        doc.addPage();
+        let yPos = margin;
         doc.setFontSize(18);
         doc.setFont(undefined, 'bold');
         doc.text('About', margin, yPos);
         yPos += 10;
-
         doc.setFontSize(11);
         doc.setFont(undefined, 'normal');
-        const aboutText = doc.splitTextToSize(portfolio.about || 'No description available.', pageWidth - 2 * margin);
+        const aboutText = doc.splitTextToSize(source.about || 'No description available.', pageWidth - 2 * margin);
         doc.text(aboutText, margin, yPos);
-        yPos += aboutText.length * 6 + 10;
+        yPos += aboutText.length * 6 + 12;
 
-        // Check if we need a new page
-        if (yPos > 250) {
-            doc.addPage();
-            yPos = margin;
-        }
-
-        // Skills Section
-        doc.setFontSize(18);
+        doc.setFontSize(16);
         doc.setFont(undefined, 'bold');
         doc.text('Skills', margin, yPos);
-        yPos += 10;
-
-        doc.setFontSize(11);
+        yPos += 8;
+        doc.setFontSize(10);
         doc.setFont(undefined, 'normal');
-        const skillsText = (portfolio.skills || []).length > 0 
-            ? (portfolio.skills || []).join(', ')
-            : 'No skills listed.';
+        const skillsText = (source.skills || []).length > 0 ? source.skills.join(', ') : 'No skills listed.';
         const skillsSplit = doc.splitTextToSize(skillsText, pageWidth - 2 * margin);
         doc.text(skillsSplit, margin, yPos);
-        yPos += skillsSplit.length * 6 + 15;
+        yPos += skillsSplit.length * 5 + 12;
 
-        // Projects Section
-        doc.setFontSize(18);
+        doc.setFontSize(16);
         doc.setFont(undefined, 'bold');
-        doc.text('Projects', margin, yPos);
-        yPos += 10;
-
-        (portfolio.projects || []).forEach((p, index) => {
-            // Check if we need a new page
-            if (yPos > 250) {
+        doc.text('Certifications', margin, yPos);
+        yPos += 8;
+        doc.setFontSize(10);
+        doc.setFont(undefined, 'normal');
+        (source.certifications || []).forEach((c) => {
+            if (yPos > 260) {
                 doc.addPage();
                 yPos = margin;
             }
-
-            doc.setFontSize(14);
-            doc.setFont(undefined, 'bold');
-            doc.text(p.title || `Project ${index + 1}`, margin, yPos);
-            yPos += 8;
-
-            doc.setFontSize(10);
-            doc.setFont(undefined, 'normal');
-            const descText = doc.splitTextToSize(p.desc || 'No description available.', pageWidth - 2 * margin);
-            doc.text(descText, margin, yPos);
-            yPos += descText.length * 5 + 10;
+            doc.text(`- ${c.name || 'Unnamed Certification'} (${c.issuer || 'Unknown Issuer'})`, margin, yPos);
+            yPos += 6;
         });
 
-        // Certifications Section
-        if (portfolio.certifications && portfolio.certifications.length > 0) {
-            // Check if we need a new page
-            if (yPos > 250) {
-                doc.addPage();
-                yPos = margin;
-            }
+        (source.projects || []).forEach((p, index) => {
+            doc.addPage();
+            let py = margin;
+            doc.setFontSize(11);
+            doc.setFont(undefined, 'normal');
+            doc.text(`Project ${index + 1}`, margin, py);
+            py += 8;
 
             doc.setFontSize(18);
             doc.setFont(undefined, 'bold');
-            doc.text('Certifications', margin, yPos);
-            yPos += 10;
+            doc.text(p.title || `Project ${index + 1}`, margin, py);
+            py += 10;
 
-            portfolio.certifications.forEach(c => {
-                // Check if we need a new page
-                if (yPos > 250) {
-                    doc.addPage();
-                    yPos = margin;
-                }
+            doc.setFontSize(10);
+            doc.setFont(undefined, 'normal');
+            if (p.year) {
+                doc.text(`Year: ${p.year}`, margin, py);
+                py += 6;
+            }
+            if (p.tech) {
+                const techText = doc.splitTextToSize(`Tech/Tools: ${p.tech}`, pageWidth - 2 * margin);
+                doc.text(techText, margin, py);
+                py += techText.length * 5 + 4;
+            }
+            if (p.repoUrl) {
+                const repoText = doc.splitTextToSize(`Repository: ${p.repoUrl}`, pageWidth - 2 * margin);
+                doc.text(repoText, margin, py);
+                py += repoText.length * 5 + 4;
+            }
+            if (p.pdfUrl) {
+                const pdfText = doc.splitTextToSize(`Project PDF: ${p.pdfName || p.pdfUrl}`, pageWidth - 2 * margin);
+                doc.text(pdfText, margin, py);
+                py += pdfText.length * 5 + 4;
+            }
+            const descText = doc.splitTextToSize(p.desc || 'No description available.', pageWidth - 2 * margin);
+            doc.text(descText, margin, py);
+        });
 
-                doc.setFontSize(12);
-                doc.setFont(undefined, 'bold');
-                doc.text(c.name || 'Unnamed Certification', margin, yPos);
-                yPos += 7;
-
-                doc.setFontSize(10);
-                doc.setFont(undefined, 'normal');
-                doc.text(`Issued by: ${c.issuer || 'Unknown'}`, margin + 5, yPos);
-                yPos += 10;
-            });
+        const totalPages = doc.getNumberOfPages();
+        for (let i = 1; i <= totalPages; i += 1) {
+            doc.setPage(i);
+            doc.setFontSize(9);
+            doc.setFont(undefined, 'normal');
+            doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, 290, { align: 'right' });
         }
 
-        doc.save(`${portfolio.studentId || 'portfolio'}_portfolio.pdf`);
+        doc.save(`${source.studentId || 'portfolio'}_portfolio.pdf`);
     };
 
     const handleDownloadHTML = () => {
-        if (!portfolio) return;
+        const source = getEffectivePortfolio();
+        if (!source) return;
 
         const htmlContent = generateHTMLContent();
         const blob = new Blob([htmlContent], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `${portfolio.studentId || 'portfolio'}_portfolio.html`;
+        link.download = `${source.studentId || 'portfolio'}_portfolio.html`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);

@@ -1,80 +1,130 @@
-import React, { useState, useEffect } from 'react';
+
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Eye, ExternalLink, Plus, Save, ArrowRight, Download, Trash2 } from 'lucide-react';
+import clsx from 'clsx';
 import { useAuth } from '../context/AuthProvider';
 import { useData } from '../context/DataProvider';
-import { useNavigate } from 'react-router-dom';
-import { User, Code, Briefcase, Award, Palette, Save, ArrowRight, Eye, ExternalLink } from 'lucide-react';
-import clsx from 'clsx';
+import PortfolioView from './PortfolioView';
 
 const PortfolioEditor = () => {
     const { user } = useAuth();
-    const { savePortfolio, getStudentPortfolio, templates, loading } = useData();
+    const { savePortfolio, templates, loading } = useData();
     const navigate = useNavigate();
-    const isBArch = user?.program === 'barch';
 
-    const [activeTab, setActiveTab] = useState('about');
+    const normalizedProgram = String(user?.program || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\./g, '')
+        .replace(/\s+/g, '');
+    const isBArch = normalizedProgram === 'barch';
+
     const [formData, setFormData] = useState({
         about: '',
-        skills: '', // comma separated for simplicity in this MVP
+        skills: '',
         projects: [],
         certifications: [],
         meta: {
             fullName: '',
+            role: '',
             education: '',
+            educationYears: '',
             experience: '',
+            experienceYears: '',
+            college: '',
+            company: '',
             contactEmail: '',
             linkedinUrl: '',
+            githubUrl: '',
             heroImage: '',
             profileImage: '',
+            templateStyle: {
+                fontFamily: 'default',
+                textScale: 100,
+            },
+            templatePages: [],
         },
-        templateId: 'modern'
+        templateId: 'modern',
     });
 
+    const [btechBranch, setBtechBranch] = useState('cs');
+    const [editorMode, setEditorMode] = useState(false);
+    const [isExportingTemplate, setIsExportingTemplate] = useState(false);
+    const [initializedForUserId, setInitializedForUserId] = useState(null);
+    const livePreviewRef = useRef(null);
+    const [newSkillText, setNewSkillText] = useState('');
+
     useEffect(() => {
-        const existing = getStudentPortfolio(user?.id);
-        if (existing) {
-            setFormData({
-                ...existing,
-                meta: {
-                    fullName: existing?.meta?.fullName || user?.name || '',
-                    education: existing?.meta?.education || '',
-                    experience: existing?.meta?.experience || '',
-                    contactEmail: existing?.meta?.contactEmail || user?.email || '',
-                    linkedinUrl: existing?.meta?.linkedinUrl || '',
-                    heroImage: existing?.meta?.heroImage || '',
-                    profileImage: existing?.meta?.profileImage || '',
+        if (!user?.id || loading || initializedForUserId === user.id) return;
+
+        setFormData({
+            about: '',
+            skills: '',
+            projects: [],
+            certifications: [],
+            meta: {
+                fullName: user?.name || '',
+                role: '',
+                education: '',
+                educationYears: '',
+                experience: '',
+                experienceYears: '',
+                college: '',
+                company: '',
+                contactEmail: user?.email || '',
+                linkedinUrl: '',
+                githubUrl: '',
+                heroImage: '',
+                profileImage: '',
+                templateStyle: {
+                    fontFamily: 'default',
+                    textScale: 100,
                 },
-                templateId: isBArch
-                    ? 'barch-red'
-                    : (existing.templateId && existing.templateId !== 'barch-red' ? existing.templateId : 'modern')
-            });
-        } else if (isBArch) {
-            setFormData((prev) => ({
-                ...prev,
-                meta: {
-                    ...prev.meta,
-                    fullName: user?.name || '',
-                    contactEmail: user?.email || '',
-                },
-                templateId: 'barch-red'
-            }));
-        }
-    }, [user, getStudentPortfolio, isBArch]);
+                templatePages: [],
+            },
+            templateId: isBArch ? 'barch-red' : 'modern',
+        });
+
+        setInitializedForUserId(user.id);
+    }, [user?.id, user?.name, user?.email, isBArch, loading, initializedForUserId]);
 
     const buildPortfolioPayload = () => ({
         ...formData,
         templateId: isBArch
-            ? 'barch-red'
-            : (formData.templateId === 'barch-red' ? 'modern' : formData.templateId),
+            ? String(formData.templateId || '').startsWith('barch-')
+                ? formData.templateId
+                : 'barch-red'
+            : formData.templateId === 'barch-red'
+                ? 'modern'
+                : formData.templateId,
         meta: {
             ...formData.meta,
             fullName: formData?.meta?.fullName || user?.name || '',
             contactEmail: formData?.meta?.contactEmail || user?.email || '',
+            templateStyle: {
+                fontFamily: formData?.meta?.templateStyle?.fontFamily || 'default',
+                textScale: Number(formData?.meta?.templateStyle?.textScale || 100),
+            },
+            templatePages: Array.isArray(formData?.meta?.templatePages)
+                ? formData.meta.templatePages
+                    .map((p) => ({
+                        title: String(p?.title || '').trim(),
+                        content: String(p?.content || '').trim(),
+                        image: String(p?.image || '').trim(),
+                    }))
+                    .filter((p) => p.title || p.content || p.image)
+                : [],
         },
-        skills: Array.isArray(formData.skills) ? formData.skills : formData.skills.split(',').map(s => s.trim()).filter(Boolean)
+        skills: Array.isArray(formData.skills)
+            ? formData.skills
+            : String(formData.skills || '')
+                .split(',')
+                .map((s) => s.trim())
+                .filter(Boolean),
     });
 
-    const handleSave = async () => {
-        if (isBArch) {
+    const handleSave = async ({ enforceRequired = false, silent = false } = {}) => {
+        if (isBArch && enforceRequired) {
             const requiredFields = [
                 { key: 'fullName', label: 'Full Name' },
                 { key: 'education', label: 'Education' },
@@ -93,88 +143,280 @@ const PortfolioEditor = () => {
 
         try {
             await savePortfolio(user.id, buildPortfolioPayload());
-            alert('Portfolio saved successfully!');
+            if (!silent) alert('Portfolio saved successfully!');
             return true;
         } catch (error) {
             console.error('Failed to save portfolio:', error);
             const message = error?.message || 'Unknown error while saving portfolio.';
-            const hint =
-                message.includes('relation "portfolios" does not exist') ||
-                message.includes('no unique or exclusion constraint matching the ON CONFLICT')
-                    ? ' Run supabase/migrations/002_portfolios.sql in Supabase SQL Editor.'
-                    : message.includes('column "meta" of relation "portfolios" does not exist')
-                        ? ' Run supabase/migrations/005_portfolios_meta.sql in Supabase SQL Editor.'
-                    : message.includes('column "faculty_feedback" of relation "portfolios" does not exist')
-                        ? ' Run supabase/migrations/007_add_faculty_feedback_to_portfolios.sql in Supabase SQL Editor.'
-                    : '';
-            alert(`Failed to save portfolio: ${message}.${hint}`);
+            if (!silent) alert(`Failed to save portfolio: ${message}`);
             return false;
         }
     };
 
     const handlePreview = async () => {
-        // Save current draft before previewing
-        const saved = await handleSave();
-        if (!saved) return;
-        // Open in new tab
-        window.open(`/portfolio/view/${user.id}`, '_blank');
+        const previewUrl = `${window.location.origin}/portfolio/view/${user.id}?preview=1&t=${Date.now()}`;
+
+        try {
+            localStorage.setItem(`dps_preview_draft_${user.id}`, JSON.stringify(buildPortfolioPayload()));
+        } catch (e) {
+            console.warn('Could not cache preview draft locally:', e);
+        }
+
+        const previewTab = window.open('about:blank', '_blank');
+        if (previewTab && !previewTab.closed) {
+            previewTab.location.href = previewUrl;
+        } else {
+            window.open(previewUrl, '_blank');
+        }
+
+        await handleSave({ enforceRequired: false, silent: true });
     };
 
     const handlePublish = async () => {
-        const saved = await handleSave();
-        if (saved) {
-            navigate('/student-dashboard');
+        const saved = await handleSave({ enforceRequired: true });
+        if (saved) navigate('/student-dashboard');
+    };
+
+    const handleDownloadTemplate = async () => {
+        if (!livePreviewRef.current) {
+            alert('Open Live Editor first.');
+            return;
+        }
+
+        try {
+            setIsExportingTemplate(true);
+            const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+                import('html2canvas'),
+                import('jspdf'),
+            ]);
+
+            await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+
+            const canvas = await html2canvas(livePreviewRef.current, {
+                scale: Math.max(3, Math.ceil((window.devicePixelRatio || 1) * 2)),
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                logging: false,
+                imageTimeout: 0,
+                scrollX: 0,
+                scrollY: -window.scrollY,
+            });
+
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const imgWidth = pageWidth;
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+            let heightLeft = imgHeight;
+            let position = 0;
+
+            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+            heightLeft -= pageHeight;
+
+            while (heightLeft > 0) {
+                position = heightLeft - imgHeight;
+                pdf.addPage();
+                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
+                heightLeft -= pageHeight;
+            }
+
+            const safeName = String(formData?.meta?.fullName || user?.name || 'portfolio')
+                .trim()
+                .replace(/[^\w-]+/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-|-$/g, '')
+                || 'portfolio';
+            pdf.save(`${safeName}-${formData.templateId || 'template'}.pdf`);
+        } catch (error) {
+            console.error('Failed to download template PDF:', error);
+            alert('Failed to download PDF. Please try again.');
+        } finally {
+            setIsExportingTemplate(false);
         }
     };
 
-    if (loading) {
-        return <div className="text-white text-center py-16">Loading portfolio...</div>;
-    }
+    const setRoot = (key, value) => {
+        setFormData((prev) => {
+            if (key === 'templateId' && prev.templateId !== value) {
+                return {
+                    ...prev,
+                    [key]: value,
+                    meta: {
+                        ...(prev.meta || {}),
+                        templatePageCopies: [],
+                        templatePages: [],
+                    },
+                };
+            }
+            return { ...prev, [key]: value };
+        });
+    };
 
-    if (!user?.id) {
-        return <div className="text-red-400 text-center py-16">User not found. Please sign in again.</div>;
-    }
+    const setMeta = (key, value) => {
+        setFormData((prev) => ({ ...prev, meta: { ...(prev.meta || {}), [key]: value } }));
+    };
 
-    const TabButton = ({ id, icon: Icon, label }) => (
-        <button
-            onClick={() => setActiveTab(id)}
-            className={clsx(
-                'flex items-center gap-2 px-4 py-3 rounded-lg text-sm font-medium transition-all w-full md:w-auto',
-                activeTab === id
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-500/25'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-            )}
-        >
-            <Icon size={18} />
-            <span>{label}</span>
-        </button>
-    );
+    const setSectionVisibility = (key, visible) => {
+        setFormData((prev) => ({
+            ...prev,
+            meta: {
+                ...(prev.meta || {}),
+                sectionVisibility: {
+                    ...(prev?.meta?.sectionVisibility || {}),
+                    [key]: visible,
+                },
+            },
+        }));
+    };
+
+    const addProject = () => {
+        setFormData((prev) => ({
+            ...prev,
+            projects: [
+                ...(prev.projects || []),
+                { title: 'New Project', desc: 'Edit this project details', tech: '', year: '', image: '', repoUrl: '', pdfUrl: '', pdfName: '' },
+            ],
+        }));
+    };
+
+    const updateProject = (idx, patch) => {
+        setFormData((prev) => {
+            const projects = Array.isArray(prev.projects) ? [...prev.projects] : [];
+            projects[idx] = { ...(projects[idx] || {}), ...patch };
+            return { ...prev, projects };
+        });
+    };
+
+    const removeProject = (idx) => {
+        setFormData((prev) => ({
+            ...prev,
+            projects: (Array.isArray(prev.projects) ? prev.projects : []).filter((_, i) => i !== idx),
+        }));
+    };
+
+    const addTemplatePage = () => {
+        setFormData((prev) => {
+            const copies = Array.isArray(prev?.meta?.templatePageCopies) ? prev.meta.templatePageCopies : [];
+            const snapshot = JSON.parse(JSON.stringify({
+                ...prev,
+                meta: {
+                    ...(prev.meta || {}),
+                    templatePageCopies: [],
+                    templatePages: [],
+                },
+            }));
+            return {
+                ...prev,
+                meta: {
+                    ...(prev.meta || {}),
+                    templatePageCopies: [...copies, snapshot],
+                },
+            };
+        });
+    };
+
+    const addCertification = () => {
+        setFormData((prev) => ({
+            ...prev,
+            certifications: [...(Array.isArray(prev.certifications) ? prev.certifications : []), { name: 'New Certification', issuer: 'Issuer' }],
+        }));
+    };
+
+    const updateCertification = (idx, patch) => {
+        setFormData((prev) => {
+            const certifications = Array.isArray(prev.certifications) ? [...prev.certifications] : [];
+            certifications[idx] = { ...(certifications[idx] || {}), ...patch };
+            return { ...prev, certifications };
+        });
+    };
+
+    const removeCertification = (idx) => {
+        setFormData((prev) => ({
+            ...prev,
+            certifications: (Array.isArray(prev.certifications) ? prev.certifications : []).filter((_, i) => i !== idx),
+        }));
+    };
+
+    const addSkill = () => {
+        const value = String(newSkillText || '').trim();
+        if (!value) return;
+        setFormData((prev) => ({
+            ...prev,
+            skills: [...(Array.isArray(prev.skills) ? prev.skills : []), value],
+        }));
+        setNewSkillText('');
+    };
+
+    const updateSkill = (idx, value) => {
+        setFormData((prev) => {
+            const skills = Array.isArray(prev.skills) ? [...prev.skills] : [];
+            skills[idx] = value;
+            return { ...prev, skills };
+        });
+    };
+
+    const removeSkill = (idx) => {
+        setFormData((prev) => ({
+            ...prev,
+            skills: (Array.isArray(prev.skills) ? prev.skills : []).filter((_, i) => i !== idx),
+        }));
+    };
+
+    const visibleTemplates = templates
+        .filter((t) => (isBArch ? t.group === 'barch' : t.group && !String(t.group).startsWith('barch')))
+        .filter((t) => {
+            if (isBArch) return true;
+            if (!t.branch) return true;
+            return t.branch === btechBranch;
+        });
+
+    const selectedTemplate = visibleTemplates.find((t) => t.id === formData.templateId)
+        || templates.find((t) => t.id === formData.templateId);
+
+    const editorShellClass = (() => {
+        if (String(formData.templateId || '').startsWith('barch-')) {
+            return 'rounded-2xl border border-rose-300/30 bg-gradient-to-br from-rose-950/60 via-slate-900/90 to-slate-800/90 p-6 md:p-8 space-y-6';
+        }
+        if (String(formData.templateId || '').startsWith('btech-')) {
+            return 'rounded-2xl border border-cyan-300/20 bg-gradient-to-br from-slate-950/85 via-slate-900/85 to-cyan-950/40 p-6 md:p-8 space-y-6';
+        }
+        if (formData.templateId === 'academic') {
+            return 'rounded-2xl border border-blue-200/25 bg-gradient-to-br from-slate-900/90 via-slate-800/90 to-slate-900/90 p-6 md:p-8 space-y-6';
+        }
+        return 'rounded-2xl border border-white/15 bg-gradient-to-br from-slate-900/80 to-slate-800/80 p-6 md:p-8 space-y-6';
+    })();
+
+    if (loading) return <div className="text-white text-center py-16">Loading portfolio...</div>;
+    if (!user?.id) return <div className="text-red-400 text-center py-16">User not found. Please sign in again.</div>;
 
     return (
         <div className="flex flex-col md:flex-row gap-8">
-            {/* Sidebar Navigation */}
             <div className="w-full md:w-64 flex-shrink-0 space-y-2">
-                <h2 className="text-lg font-bold text-white mb-4 px-2">Editor Sections</h2>
-                <TabButton id="about" icon={User} label="About Me" />
-                <TabButton id="skills" icon={Code} label="Skills" />
-                <TabButton id="projects" icon={Briefcase} label="Projects" />
-                <TabButton id="certs" icon={Award} label="Certifications" />
-                <TabButton id="design" icon={Palette} label="Design & Template" />
+                <h2 className="text-lg font-bold text-white mb-4 px-2">Template Editor</h2>
+                <div className="px-4 py-3 rounded-lg text-sm font-medium bg-blue-600 text-white shadow-lg shadow-blue-500/25">
+                    Design & Template
+                </div>
 
                 <div className="pt-8 px-2 space-y-3">
-                    {user?.id && (
-                        <button
-                            onClick={handlePreview}
-                            className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-purple-500/50 text-purple-400 hover:bg-purple-500/10 transition-all"
-                        >
-                            <Eye size={18} /> Preview Portfolio
-                        </button>
-                    )}
+                    <button
+                        onClick={handlePreview}
+                        className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-purple-500/50 text-purple-400 hover:bg-purple-500/10 transition-all"
+                    >
+                        <Eye size={18} /> Preview Portfolio
+                    </button>
                     <button
                         onClick={handleSave}
                         className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-blue-500/50 text-blue-400 hover:bg-blue-500/10 transition-all"
                     >
                         <Save size={18} /> Save Draft
+                    </button>
+                    <button
+                        onClick={handleDownloadTemplate}
+                        className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/10 transition-all"
+                    >
+                        <Download size={18} /> Download PDF
                     </button>
                     <button
                         onClick={handlePublish}
@@ -183,281 +425,276 @@ const PortfolioEditor = () => {
                         <span>Publish Changes</span>
                         <ArrowRight size={18} />
                     </button>
-                    {user?.id && (
-                        <div className="pt-4 border-t border-white/10">
-                            <p className="text-xs text-slate-400 mb-2">Portfolio Link:</p>
-                            <div className="flex items-center gap-2 p-2 bg-slate-900/50 rounded text-xs text-slate-300 break-all">
-                                <ExternalLink size={14} />
-                                <span>{window.location.origin}/portfolio/view/{user.id}</span>
-                            </div>
+                    <div className="pt-4 border-t border-white/10">
+                        <p className="text-xs text-slate-400 mb-2">Portfolio Link:</p>
+                        <div className="flex items-center gap-2 p-2 bg-slate-900/50 rounded text-xs text-slate-300 break-all">
+                            <ExternalLink size={14} />
+                            <span>{window.location.origin}/portfolio/view/{user.id}</span>
                         </div>
-                    )}
+                    </div>
                 </div>
             </div>
 
-            {/* Main Content Area */}
-            <div className="flex-1 glass-panel p-8 rounded-2xl min-h-[500px]">
+            <div className="flex-1 glass-panel p-8 rounded-2xl min-h-[500px] space-y-8">
+                {!editorMode ? (
+                    <>
+                        <div>
+                            <h2 className="text-2xl font-bold text-white mb-2">Choose Template</h2>
+                            <p className="text-sm text-slate-400">Select template first. Live editor opens on a separate full editing view.</p>
+                        </div>
 
-                {/* About Section */}
-                {activeTab === 'about' && (
-                    <div className="space-y-6">
-                        <h2 className="text-2xl font-bold text-white">Profile Information</h2>
-                        {isBArch && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm text-slate-400 mb-2">Full Name *</label>
-                                    <input
-                                        type="text"
-                                        value={formData.meta?.fullName || ''}
-                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, fullName: e.target.value } })}
-                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                        placeholder="John Doe"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm text-slate-400 mb-2">Education *</label>
-                                    <input
-                                        type="text"
-                                        value={formData.meta?.education || ''}
-                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, education: e.target.value } })}
-                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                        placeholder="B.Arch, Harvard GSD (2015 - 2020)"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm text-slate-400 mb-2">Experience *</label>
-                                    <input
-                                        type="text"
-                                        value={formData.meta?.experience || ''}
-                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, experience: e.target.value } })}
-                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                        placeholder="5 years"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm text-slate-400 mb-2">Contact Email *</label>
-                                    <input
-                                        type="email"
-                                        value={formData.meta?.contactEmail || ''}
-                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, contactEmail: e.target.value } })}
-                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                        placeholder="contact@example.com"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm text-slate-400 mb-2">LinkedIn URL</label>
-                                    <input
-                                        type="url"
-                                        value={formData.meta?.linkedinUrl || ''}
-                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, linkedinUrl: e.target.value } })}
-                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                        placeholder="https://www.linkedin.com/in/username/"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm text-slate-400 mb-2">Hero Image URL</label>
-                                    <input
-                                        type="url"
-                                        value={formData.meta?.heroImage || ''}
-                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, heroImage: e.target.value } })}
-                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                        placeholder="https://..."
-                                    />
-                                </div>
-                                <div className="md:col-span-2">
-                                    <label className="block text-sm text-slate-400 mb-2">Profile Image URL</label>
-                                    <input
-                                        type="url"
-                                        value={formData.meta?.profileImage || ''}
-                                        onChange={(e) => setFormData({ ...formData, meta: { ...formData.meta, profileImage: e.target.value } })}
-                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-3 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                        placeholder="https://..."
-                                    />
+                        {!isBArch && (
+                            <div>
+                                <p className="text-sm text-slate-300 mb-2">Select BTech branch</p>
+                                <div className="flex flex-wrap gap-2">
+                                    {[
+                                        { id: 'cs', label: 'Computer Science' },
+                                        { id: 'mech', label: 'Mechanical' },
+                                        { id: 'eee', label: 'Electrical' },
+                                        { id: 'ece', label: 'Electronics' },
+                                        { id: 'robo', label: 'Robotics' },
+                                    ].map((b) => (
+                                        <button
+                                            key={b.id}
+                                            type="button"
+                                            onClick={() => setBtechBranch(b.id)}
+                                            className={clsx(
+                                                'px-3 py-1 rounded-full text-xs font-medium border',
+                                                btechBranch === b.id
+                                                    ? 'bg-blue-600 border-blue-400 text-white'
+                                                    : 'bg-slate-900/40 border-white/15 text-slate-200 hover:bg-white/5'
+                                            )}
+                                        >
+                                            {b.label}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
                         )}
-                        <div>
-                            <label className="block text-sm text-slate-400 mb-2">{isBArch ? 'About Me' : 'Professional Summary'}</label>
-                            <textarea
-                                rows={6}
-                                value={formData.about}
-                                onChange={(e) => setFormData({ ...formData, about: e.target.value })}
-                                className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder={isBArch ? 'An architect who believes in sustainable and minimal design...' : 'I am a passionate developer...'}
-                            />
-                        </div>
-                    </div>
-                )}
 
-                {/* Skills Section */}
-                {activeTab === 'skills' && (
-                    <div className="space-y-6">
-                        <h2 className="text-2xl font-bold text-white">Skills & Expertise</h2>
-                        <div>
-                            <label className="block text-sm text-slate-400 mb-2">Skills (Comma separated)</label>
-                            <input
-                                type="text"
-                                value={Array.isArray(formData.skills) ? formData.skills.join(', ') : formData.skills}
-                                onChange={(e) => setFormData({ ...formData, skills: e.target.value })}
-                                className="w-full bg-slate-900/50 border border-slate-700 rounded-xl p-4 text-white focus:ring-2 focus:ring-blue-500 outline-none"
-                                placeholder="React, Node.js, Python, UI Design"
-                            />
-                        </div>
-                    </div>
-                )}
-
-                {/* Projects Section */}
-                {activeTab === 'projects' && (
-                    <div className="space-y-6">
-                        <div className="flex justify-between items-center">
-                            <h2 className="text-2xl font-bold text-white">Projects</h2>
-                            <button
-                                onClick={() =>
-                                    setFormData({
-                                        ...formData,
-                                        projects: [...formData.projects, { title: '', desc: '', tech: '', year: '', image: '' }]
-                                    })
-                                }
-                                className="text-sm bg-blue-600 px-3 py-1 rounded text-white"
-                            >
-                                + Add Project
-                            </button>
-                        </div>
-
-                        {formData.projects.length === 0 && <p className="text-slate-500">No projects added yet.</p>}
-
-                        <div className="space-y-4">
-                            {formData.projects.map((proj, idx) => (
-                                <div key={idx} className="p-4 bg-white/5 rounded-xl border border-white/10 space-y-3">
-                                    <input
-                                        placeholder="Project Title"
-                                        value={proj.title}
-                                        onChange={(e) => {
-                                            const newProjs = [...formData.projects];
-                                            newProjs[idx].title = e.target.value;
-                                            setFormData({ ...formData, projects: newProjs });
-                                        }}
-                                        className="w-full bg-transparent border-b border-slate-700 pb-2 text-white outline-none focus:border-blue-500"
-                                    />
-                                    <textarea
-                                        placeholder="Project Description"
-                                        value={proj.desc}
-                                        onChange={(e) => {
-                                            const newProjs = [...formData.projects];
-                                            newProjs[idx].desc = e.target.value;
-                                            setFormData({ ...formData, projects: newProjs });
-                                        }}
-                                        className="w-full bg-transparent border-b border-slate-700 pb-2 text-slate-300 text-sm outline-none focus:border-blue-500"
-                                    />
-                                    {isBArch && (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            <input
-                                                placeholder="Year (e.g. 2023)"
-                                                value={proj.year || ''}
-                                                onChange={(e) => {
-                                                    const newProjs = [...formData.projects];
-                                                    newProjs[idx].year = e.target.value;
-                                                    setFormData({ ...formData, projects: newProjs });
-                                                }}
-                                                className="w-full bg-transparent border-b border-slate-700 pb-2 text-slate-300 text-sm outline-none focus:border-blue-500"
-                                            />
-                                            <input
-                                                placeholder="Project Image URL"
-                                                value={proj.image || ''}
-                                                onChange={(e) => {
-                                                    const newProjs = [...formData.projects];
-                                                    newProjs[idx].image = e.target.value;
-                                                    setFormData({ ...formData, projects: newProjs });
-                                                }}
-                                                className="w-full bg-transparent border-b border-slate-700 pb-2 text-slate-300 text-sm outline-none focus:border-blue-500"
-                                            />
-                                        </div>
-                                    )}
-                                    <button
-                                        onClick={() => {
-                                            const newProjs = formData.projects.filter((_, i) => i !== idx);
-                                            setFormData({ ...formData, projects: newProjs });
-                                        }}
-                                        className="text-xs text-red-400 hover:text-red-300"
-                                    >
-                                        Remove
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* Design Section */}
-                {activeTab === 'design' && (
-                    <div className="space-y-6">
-                        <h2 className="text-2xl font-bold text-white">Choose Template</h2>
-                        {isBArch && (
-                            <div className="rounded-xl border border-red-400/40 bg-red-500/10 p-4 text-sm text-red-200">
-                                BArch accounts use the fixed <strong>BArch Red Studio</strong> portfolio template.
-                            </div>
-                        )}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {(isBArch
-                                ? templates.filter((t) => t.id === 'barch-red')
-                                : templates.filter((t) => t.id !== 'barch-red')
-                            ).map(t => (
+                            {visibleTemplates.map((t) => (
                                 <div
                                     key={t.id}
-                                    onClick={() => !isBArch && setFormData({ ...formData, templateId: t.id })}
                                     className={clsx(
-                                        'p-4 rounded-xl border cursor-pointer transition-all',
+                                        'p-4 rounded-xl border transition-all',
                                         formData.templateId === t.id
                                             ? 'bg-blue-600/20 border-blue-500 ring-2 ring-blue-500/50'
-                                            : 'bg-white/5 border-white/10 hover:bg-white/10',
-                                        isBArch && 'cursor-default'
+                                            : 'bg-white/5 border-white/10 hover:bg-white/10'
                                     )}
                                 >
                                     <h3 className="font-bold text-white">{t.name}</h3>
                                     <p className="text-sm text-slate-400">{t.description}</p>
+                                    <div className="mt-3 flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setRoot('templateId', t.id);
+                                                setEditorMode(true);
+                                            }}
+                                            className="px-3 py-1 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-500 transition"
+                                        >
+                                            Open Live Editor
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const demoId = `demo-${t.id}`;
+                                                const url = `${window.location.origin}/portfolio/view/${demoId}`;
+                                                window.open(url, '_blank');
+                                            }}
+                                            className="px-3 py-1 rounded-lg border border-white/20 text-xs text-slate-200 hover:bg-white/10 transition"
+                                        >
+                                            View demo
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                         </div>
-                    </div>
-                )}
-
-                {/* Certifications - Simplified implementation like projects */}
-                {activeTab === 'certs' && (
-                    <div className="space-y-6">
-                        <div className="flex justify-between items-center">
-                            <h2 className="text-2xl font-bold text-white">Certifications</h2>
+                    </>
+                ) : (
+                    <>
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <h3 className="text-2xl font-bold text-white">
+                                    Live Visual Editor
+                                    {selectedTemplate?.name ? ` - ${selectedTemplate.name}` : ''}
+                                </h3>
+                                <p className="text-sm text-slate-400">Template -&gt; Visual editor -&gt; Click and edit directly. Changes appear immediately here.</p>
+                            </div>
                             <button
-                                onClick={() => setFormData({ ...formData, certifications: [...formData.certifications, { name: '', issuer: '' }] })}
-                                className="text-sm bg-blue-600 px-3 py-1 rounded text-white"
+                                type="button"
+                                onClick={() => setEditorMode(false)}
+                                className="px-3 py-2 rounded-lg border border-white/20 text-sm text-slate-200 hover:bg-white/10 transition"
                             >
-                                + Add Certification
+                                Change Template
                             </button>
                         </div>
-                        {formData.certifications.map((cert, idx) => (
-                            <div key={idx} className="p-4 bg-white/5 rounded-xl border border-white/10 space-y-3">
-                                <input
-                                    placeholder="Certification Name"
-                                    value={cert.name}
-                                    onChange={(e) => {
-                                        const newCerts = [...formData.certifications];
-                                        newCerts[idx].name = e.target.value;
-                                        setFormData({ ...formData, certifications: newCerts });
-                                    }}
-                                    className="w-full bg-transparent border-b border-slate-700 pb-2 text-white outline-none focus:border-blue-500"
-                                />
-                                <input
-                                    placeholder="Issuer"
-                                    value={cert.issuer}
-                                    onChange={(e) => {
-                                        const newCerts = [...formData.certifications];
-                                        newCerts[idx].issuer = e.target.value;
-                                        setFormData({ ...formData, certifications: newCerts });
-                                    }}
-                                    className="w-full bg-transparent border-b border-slate-700 pb-2 text-slate-300 text-sm outline-none focus:border-blue-500"
+
+                        <div className={`${editorShellClass} min-h-[80vh]`}>
+                            <div ref={livePreviewRef} className="rounded-xl overflow-hidden border border-white/10">
+                                <PortfolioView
+                                    portfolioOverride={buildPortfolioPayload()}
+                                    editable
+                                    onPortfolioChange={setFormData}
+                                    hideFooterBadge
+                                    exportMode={isExportingTemplate}
                                 />
                             </div>
-                        ))}
-                    </div>
+                            <div className="flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={addTemplatePage}
+                                    className="inline-flex items-center gap-2 text-sm bg-blue-600 px-3 py-1 rounded text-white"
+                                >
+                                    <Plus size={14} /> Add Page
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleDownloadTemplate}
+                                    className="inline-flex items-center gap-2 text-sm bg-cyan-600 px-3 py-1 rounded text-white"
+                                >
+                                    <Download size={14} /> Download PDF
+                                </button>
+                            </div>
+
+                            <div className="rounded-xl border border-white/15 bg-black/20 p-4 space-y-4">
+                                <h4 className="text-white font-semibold">Template Controls (All Templates)</h4>
+                                <p className="text-xs text-slate-400">Use this for templates where inline editing is limited. These controls also work for templates you add later.</p>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    <input
+                                        value={formData?.meta?.fullName || ''}
+                                        onChange={(e) => setMeta('fullName', e.target.value)}
+                                        placeholder="Full name"
+                                        className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                    />
+                                    <input
+                                        value={formData?.meta?.role || ''}
+                                        onChange={(e) => setMeta('role', e.target.value)}
+                                        placeholder="Role / title"
+                                        className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                    />
+                                    <input
+                                        value={formData?.meta?.contactEmail || ''}
+                                        onChange={(e) => setMeta('contactEmail', e.target.value)}
+                                        placeholder="Contact email"
+                                        className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                    />
+                                    <input
+                                        value={formData?.about || ''}
+                                        onChange={(e) => setRoot('about', e.target.value)}
+                                        placeholder="About"
+                                        className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                    />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <h5 className="text-sm text-slate-200">Hide/Show Sections</h5>
+                                    <div className="flex flex-wrap gap-2">
+                                        {[
+                                            { key: 'about', label: 'About' },
+                                            { key: 'skills', label: 'Skills' },
+                                            { key: 'projects', label: 'Projects' },
+                                            { key: 'certifications', label: 'Certifications' },
+                                            { key: 'services', label: 'Services' },
+                                            { key: 'qualification', label: 'Qualification' },
+                                            { key: 'testimonials', label: 'Testimonials' },
+                                            { key: 'contact', label: 'Contact' },
+                                            { key: 'extraPages', label: 'Extra Pages' },
+                                        ].map((s) => {
+                                            const visible = formData?.meta?.sectionVisibility?.[s.key] !== false;
+                                            return (
+                                                <button
+                                                    key={s.key}
+                                                    type="button"
+                                                    onClick={() => setSectionVisibility(s.key, !visible)}
+                                                    className={`px-2 py-1 rounded-full text-xs border ${visible ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300'}`}
+                                                >
+                                                    {visible ? `Hide ${s.label}` : `Show ${s.label}`}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <h5 className="text-sm text-slate-200">Skills</h5>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input
+                                            value={newSkillText}
+                                            onChange={(e) => setNewSkillText(e.target.value)}
+                                            placeholder="Add skill"
+                                            className="flex-1 bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                        />
+                                        <button type="button" onClick={addSkill} className="px-3 py-2 bg-blue-600 rounded text-white text-sm">Add</button>
+                                    </div>
+                                    <div className="space-y-1">
+                                        {(Array.isArray(formData.skills) ? formData.skills : []).map((s, i) => (
+                                            <div key={`${s}-${i}`} className="grid grid-cols-[1fr_auto] gap-2">
+                                                <input
+                                                    value={s}
+                                                    onChange={(e) => updateSkill(i, e.target.value)}
+                                                    className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                                />
+                                                <button type="button" onClick={() => removeSkill(i)} className="text-red-400 hover:text-red-300">
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <h5 className="text-sm text-slate-200">Projects</h5>
+                                        <button type="button" onClick={addProject} className="text-xs px-2 py-1 bg-blue-600 rounded text-white">Add</button>
+                                    </div>
+                                    {(Array.isArray(formData.projects) ? formData.projects : []).map((p, i) => (
+                                        <div key={i} className="grid grid-cols-[1fr_auto] gap-2">
+                                            <input
+                                                value={p.title || ''}
+                                                onChange={(e) => updateProject(i, { title: e.target.value })}
+                                                placeholder="Project title"
+                                                className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                            />
+                                            <button type="button" onClick={() => removeProject(i)} className="text-red-400 hover:text-red-300">
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <h5 className="text-sm text-slate-200">Certifications</h5>
+                                        <button type="button" onClick={addCertification} className="text-xs px-2 py-1 bg-blue-600 rounded text-white">Add</button>
+                                    </div>
+                                    {(Array.isArray(formData.certifications) ? formData.certifications : []).map((c, i) => (
+                                        <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
+                                            <input
+                                                value={c.name || ''}
+                                                onChange={(e) => updateCertification(i, { name: e.target.value })}
+                                                placeholder="Certification"
+                                                className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                            />
+                                            <input
+                                                value={c.issuer || ''}
+                                                onChange={(e) => updateCertification(i, { issuer: e.target.value })}
+                                                placeholder="Issuer"
+                                                className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                            />
+                                            <button type="button" onClick={() => removeCertification(i)} className="text-red-400 hover:text-red-300">
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </>
                 )}
 
             </div>

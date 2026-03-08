@@ -36,10 +36,20 @@ const INITIAL_OPPORTUNITIES = [
 ];
 
 const INITIAL_TEMPLATES = [
-    { id: 'modern', name: 'Modern Minimal', description: 'Clean and whitespace heavy' },
-    { id: 'creative', name: 'Creative Bold', description: 'Colorful and dynamic' },
-    { id: 'academic', name: 'Academic Professional', description: 'Structured and detailed' },
-    { id: 'barch-red', name: 'BArch Red Studio', description: 'Red and white modern architecture portfolio' }
+    { id: 'modern', name: 'Modern Minimal', description: 'Clean and whitespace heavy', group: 'general' },
+    { id: 'academic', name: 'Academic Professional', description: 'Structured and detailed', group: 'general' },
+    // BTech Templates (grouped by BTech branch)
+    { id: 'btech-cs', name: 'BTech Computer Science', description: 'Templates focused on CSE projects and skills', group: 'btech-branch', branch: 'cs' },
+    { id: 'btech-cs-unicons', name: 'BTech CS Unicons Sections', description: 'Single-page section layout (home, about, skills, qualification, services, portfolio, contact)', group: 'btech-branch', branch: 'cs' },
+    { id: 'btech-mech', name: 'BTech Mechanical', description: 'Templates focused on Mechanical projects and tools', group: 'btech-branch', branch: 'mech' },
+    { id: 'btech-mech-wajiha', name: 'Mechanical Portfolio Classic', description: 'Single-page mechanical portfolio with intro, skill bars, work showcase, and contact', group: 'btech-branch', branch: 'mech' },
+    { id: 'btech-eee', name: 'BTech Electrical', description: 'Templates focused on Electrical projects and skills', group: 'btech-branch', branch: 'eee' },
+    { id: 'btech-ece', name: 'BTech Electronics', description: 'Templates focused on Electronics & Communication', group: 'btech-branch', branch: 'ece' },
+    { id: 'btech-robo', name: 'BTech Robotics', description: 'Templates focused on Robotics & Automation', group: 'btech-branch', branch: 'robo' },
+    // BArch Templates (unchanged)
+    { id: 'barch-red', name: 'BArch Red Studio', description: 'Red and white modern architecture portfolio', group: 'barch' },
+    { id: 'barch-portfolio-a', name: 'BArch Portfolio Book', description: 'Editorial portfolio style with large project boards', group: 'barch' },
+    { id: 'barch-portfolio-b', name: 'BArch Slate Journal', description: 'Dark studio portfolio with timeline and project cards', group: 'barch' }
 ];
 
 export const DataProvider = ({ children }) => {
@@ -169,7 +179,63 @@ export const DataProvider = ({ children }) => {
         localStorage.setItem('dps_reviews', JSON.stringify(updated));
     };
 
-    const getStudentPortfolio = (studentId) => portfolios[studentId] || null;
+    const getStudentPortfolio = (studentId) => {
+        if (!studentId) return null;
+
+        // Demo portfolios for viewing templates without entering data
+        if (typeof studentId === 'string' && studentId.startsWith('demo-')) {
+            const templateKey = studentId.replace('demo-', '');
+
+            const base = {
+                studentId,
+                about: 'I am a B.Tech student passionate about building modern web applications and solving real-world problems through code.',
+                skills: ['HTML5', 'CSS3', 'JavaScript', 'React', 'Node.js', 'Git'],
+                projects: [
+                    {
+                        title: 'Online Voting System',
+                        desc: 'A secure web-based voting platform built with React and Node.js, featuring user authentication and real-time result dashboards.',
+                        tech: 'React, Node.js, Express, MongoDB',
+                        year: '2025',
+                        image: '',
+                    },
+                    {
+                        title: 'Smart Attendance Tracker',
+                        desc: 'Face-recognition-based attendance system integrated with a simple admin dashboard for report generation.',
+                        tech: 'Python, OpenCV, Flask, SQLite',
+                        year: '2024',
+                        image: '',
+                    },
+                ],
+                certifications: [
+                    { name: 'AWS Academy Cloud Foundations', issuer: 'Amazon Web Services' },
+                    { name: 'Responsive Web Design', issuer: 'freeCodeCamp' },
+                ],
+                meta: {
+                    fullName: 'Demo Student',
+                    role: 'B.Tech CSE Student',
+                    education: 'B.Tech in Computer Science and Engineering',
+                    educationYears: '2022 - 2026',
+                    college: 'Your College Name',
+                    experience: 'Summer Intern - Web Developer',
+                    experienceYears: 'Jun 2025 - Aug 2025',
+                    company: 'TechCorp Labs',
+                    contactEmail: 'demo.student@example.com',
+                    linkedinUrl: 'https://www.linkedin.com/in/demo-student',
+                    githubUrl: 'https://github.com/demo-student',
+                    heroImage: '',
+                    profileImage: '',
+                },
+                templateId: templateKey,
+                score: '',
+                facultyFeedback: 'Demo feedback from faculty will appear here in the real portfolio.',
+                lastUpdated: new Date().toISOString(),
+            };
+
+            return base;
+        }
+
+        return portfolios[studentId] || null;
+    };
 
     const getAllPortfolios = () => Object.entries(portfolios).map(([id, data]) => ({ studentId: id, ...data }));
 
