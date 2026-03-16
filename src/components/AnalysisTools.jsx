@@ -26,7 +26,7 @@ export const SuggestionEngine = ({ portfolio }) => {
                     initialMessages.push({
                         id: Date.now() + index + 1,
                         type: 'bot',
-                        text: `ðŸ’¡ ${suggestion}`
+                        text: suggestion
                     });
                 });
             } else {
@@ -277,21 +277,182 @@ export const SuggestionEngine = ({ portfolio }) => {
 };
 
 export const OpportunityMatcher = ({ portfolio }) => {
-    const { opportunities } = useData();
+    const { opportunities, savePortfolio, refreshPortfolios } = useData();
+    const parseOptionalNumber = (value) => {
+        const normalized = String(value ?? '').replace(/,/g, '').trim();
+        if (!normalized) return Number.NaN;
+        return Number(normalized);
+    };
+    const portfolioMeta = portfolio?.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
+    const savedIncome =
+        portfolio?.familyIncome ??
+        portfolioMeta.familyIncome ??
+        portfolioMeta.annualIncome ??
+        portfolioMeta.householdIncome ??
+        portfolioMeta.income ??
+        '';
+    const savedGpa =
+        portfolio?.currentGpa ??
+        portfolioMeta.currentGpa ??
+        portfolioMeta.gpa ??
+        '';
+    const [incomeInput, setIncomeInput] = useState('');
+    const [gpaInput, setGpaInput] = useState('');
+    const [isSavingEligibility, setIsSavingEligibility] = useState(false);
+    const [eligibilityStatus, setEligibilityStatus] = useState(null);
+    const [selectedOpportunity, setSelectedOpportunity] = useState(null);
+
+    useEffect(() => {
+        setIncomeInput(savedIncome === '' ? '' : String(savedIncome));
+        setGpaInput(savedGpa === '' ? '' : String(savedGpa));
+    }, [savedIncome, savedGpa]);
+
+    const scholarshipMatches = useMemo(() => {
+        if (!portfolio) return [];
+        const studentIncome = parseOptionalNumber(savedIncome);
+
+        return opportunities.filter((opp) => {
+            if (opp.type !== 'Scholarship') return false;
+            if (
+                opp.incomeLimit !== undefined &&
+                opp.incomeLimit !== null &&
+                opp.incomeLimit !== ''
+            ) {
+                if (!Number.isFinite(studentIncome)) return false;
+                return studentIncome <= Number(opp.incomeLimit);
+            }
+            return true;
+        });
+    }, [portfolio, opportunities, savedIncome]);
 
     // Simple Mock Matching Logic
-    const eligibleOpportunities = useMemo(() => {
+    const internshipMatches = useMemo(() => {
         if (!portfolio) return [];
         const studentSkills = new Set(portfolio.skills?.map(s => s.toLowerCase()) || []);
+        const studentGpa = parseOptionalNumber(savedGpa);
 
         return opportunities.filter(opp => {
+            if (opp.type !== 'Internship') return false;
+
+            if (
+                opp.minGpa !== undefined &&
+                opp.minGpa !== null &&
+                opp.minGpa !== ''
+            ) {
+                if (!Number.isFinite(studentGpa)) return false;
+                if (studentGpa < Number(opp.minGpa)) return false;
+            }
+
             // If no skills required or student has at least one matching skill
             if (opp.requiredSkills.length === 0) return true;
             return opp.requiredSkills.some(skill => studentSkills.has(skill.toLowerCase()));
         });
-    }, [portfolio, opportunities]);
+    }, [portfolio, opportunities, savedGpa]);
+
+    const needsIncomeInput = opportunities.some(
+        (opp) =>
+            opp.type === 'Scholarship' &&
+            opp.incomeLimit !== undefined &&
+            opp.incomeLimit !== null &&
+            opp.incomeLimit !== '' &&
+            !Number.isFinite(parseOptionalNumber(savedIncome))
+    );
+
+    const needsGpaInput = opportunities.some(
+        (opp) =>
+            opp.type === 'Internship' &&
+            opp.minGpa !== undefined &&
+            opp.minGpa !== null &&
+            opp.minGpa !== '' &&
+            !Number.isFinite(parseOptionalNumber(savedGpa))
+    );
+
+    const handleEligibilitySave = async (field) => {
+        if (!portfolio?.studentId) return;
+
+        const rawValue = field === 'income' ? incomeInput : gpaInput;
+        const normalizedValue = Number(String(rawValue).replace(/,/g, '').trim());
+
+        if (!Number.isFinite(normalizedValue)) {
+            setEligibilityStatus({
+                type: 'error',
+                text: field === 'income' ? 'Enter a valid family income.' : 'Enter a valid CGPA out of 10.',
+            });
+            window.alert(field === 'income' ? 'Enter a valid family income.' : 'Enter a valid CGPA out of 10.');
+            return;
+        }
+
+        if (field === 'gpa' && (normalizedValue < 0 || normalizedValue > 10)) {
+            setEligibilityStatus({
+                type: 'error',
+                text: 'Enter a valid CGPA between 0 and 10.',
+            });
+            window.alert('Enter a valid CGPA between 0 and 10.');
+            return;
+        }
+
+        setIsSavingEligibility(true);
+
+        try {
+            setEligibilityStatus({
+                type: 'info',
+                text: field === 'income' ? 'Saving family income...' : 'Saving CGPA...',
+            });
+
+            const withTimeout = async (promise, label, timeoutMs = 45000) => {
+                let timeoutId;
+
+                const timeoutPromise = new Promise((_, reject) => {
+                    timeoutId = window.setTimeout(() => {
+                        reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s`));
+                    }, timeoutMs);
+                });
+
+                try {
+                    return await Promise.race([promise, timeoutPromise]);
+                } finally {
+                    window.clearTimeout(timeoutId);
+                }
+            };
+
+            await withTimeout(savePortfolio(portfolio.studentId, {
+                ...(field === 'income'
+                    ? { familyIncome: normalizedValue }
+                    : { currentGpa: normalizedValue }),
+            }), 'Eligibility save');
+
+            setEligibilityStatus({
+                type: 'info',
+                text: 'Refreshing opportunities...',
+            });
+            await withTimeout(refreshPortfolios(), 'Opportunity refresh', 10000);
+            setEligibilityStatus({
+                type: 'success',
+                text: field === 'income' ? 'Family income saved.' : 'CGPA saved.',
+            });
+        } catch (error) {
+            console.error(`Failed to save ${field}:`, error);
+            const message = error?.message || `Failed to save ${field}.`;
+            setEligibilityStatus({
+                type: 'error',
+                text: message,
+            });
+            window.alert(message);
+        } finally {
+            setIsSavingEligibility(false);
+        }
+    };
 
     if (!portfolio) return <div className="text-slate-500">Create a portfolio to see matches.</div>;
+
+    const hasAnyMatches = scholarshipMatches.length > 0 || internshipMatches.length > 0;
+    const emptyStateMessage = needsIncomeInput && needsGpaInput
+        ? 'Add your family income and current CGPA to unlock scholarship and internship matches.'
+        : needsIncomeInput
+            ? 'Add your family income to unlock scholarship matches.'
+            : needsGpaInput
+                ? 'Add your current CGPA out of 10 to unlock internship matches.'
+                : 'No matching opportunities found based on your current eligibility and skills.';
 
     return (
         <div className="space-y-6">
@@ -299,34 +460,211 @@ export const OpportunityMatcher = ({ portfolio }) => {
                 <Briefcase className="text-blue-400" />
                 <span>Recommended For You</span>
             </h3>
-            {eligibleOpportunities.length === 0 ? (
-                <p className="text-slate-500">No matching opportunities found based on your current skills.</p>
+            {needsIncomeInput ? (
+                <div className="glass-card p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+                    <p className="text-sm font-medium text-white">Scholarships need your family income.</p>
+                    <p className="text-sm text-slate-400 mt-1">Enter it once to check scholarship eligibility against income limits.</p>
+                    {eligibilityStatus ? (
+                        <div className={`mt-3 rounded-lg px-3 py-2 text-sm ${
+                            eligibilityStatus.type === 'error'
+                                ? 'bg-red-500/10 text-red-300 border border-red-500/30'
+                                : eligibilityStatus.type === 'info'
+                                    ? 'bg-emerald-500/10 text-emerald-200 border border-emerald-500/20'
+                                    : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
+                        }`}>
+                            {eligibilityStatus.text}
+                        </div>
+                    ) : null}
+                    <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                        <input
+                            type="number"
+                            min="0"
+                            value={incomeInput}
+                            onChange={(e) => setIncomeInput(e.target.value)}
+                            placeholder="Family income"
+                            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => handleEligibilitySave('income')}
+                            disabled={isSavingEligibility}
+                            className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isSavingEligibility ? 'Saving...' : 'Save Income'}
+                        </button>
+                    </div>
+                </div>
+            ) : null}
+            {needsGpaInput ? (
+                <div className="glass-card p-4 rounded-xl border border-blue-500/20 bg-blue-500/5">
+                    <p className="text-sm font-medium text-white">Internships need your current CGPA.</p>
+                    <p className="text-sm text-slate-400 mt-1">Enter it once on a 10-point scale to match against internship cutoffs.</p>
+                    {eligibilityStatus ? (
+                        <div className={`mt-3 rounded-lg px-3 py-2 text-sm ${
+                            eligibilityStatus.type === 'error'
+                                ? 'bg-red-500/10 text-red-300 border border-red-500/30'
+                                : eligibilityStatus.type === 'info'
+                                    ? 'bg-blue-500/10 text-blue-200 border border-blue-500/20'
+                                    : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
+                        }`}>
+                            {eligibilityStatus.text}
+                        </div>
+                    ) : null}
+                    <div className="mt-3 flex flex-col gap-3 sm:flex-row">
+                        <input
+                            type="number"
+                            min="0"
+                            max="10"
+                            step="0.01"
+                            value={gpaInput}
+                            onChange={(e) => setGpaInput(e.target.value)}
+                            placeholder="Current CGPA (out of 10)"
+                            className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => handleEligibilitySave('gpa')}
+                            disabled={isSavingEligibility}
+                            className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {isSavingEligibility ? 'Saving...' : 'Save CGPA'}
+                        </button>
+                    </div>
+                </div>
+            ) : null}
+            {!hasAnyMatches ? (
+                <p className="text-slate-500">{emptyStateMessage}</p>
             ) : (
-                <div className="grid md:grid-cols-2 gap-4">
-                    {eligibleOpportunities.map(opp => (
-                        <div key={opp.id} className="glass-card p-6 rounded-xl border border-white/10 group">
-                            <div className="flex justify-between items-start mb-2">
-                                <span className={`text-xs px-2 py-1 rounded ${opp.type === 'Internship' ? 'bg-blue-500/20 text-blue-400' : 'bg-purple-500/20 text-purple-400'}`}>
-                                    {opp.type}
-                                </span>
-                                <span className="text-xs text-slate-500">Match</span>
+                <div className="space-y-6">
+                    {scholarshipMatches.length > 0 ? (
+                        <div className="space-y-3">
+                            <div>
+                                <h4 className="text-lg font-semibold text-white">Scholarships</h4>
+                                <p className="text-sm text-slate-400">Only scholarships within your saved family income are shown.</p>
                             </div>
-                            <h4 className="font-bold text-white text-lg group-hover:text-blue-400 transition">{opp.title}</h4>
-                            <p className="text-slate-400 text-sm mb-4">{opp.company}</p>
+                            <div className="grid md:grid-cols-2 gap-4">
+                                {scholarshipMatches.map((opp) => (
+                                    <div key={opp.id} className="glass-card p-6 rounded-xl border border-white/10 group">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className="text-xs px-2 py-1 rounded bg-purple-500/20 text-purple-400">
+                                                {opp.type}
+                                            </span>
+                                            <span className="text-xs text-slate-500">Match</span>
+                                        </div>
+                                        <h4 className="font-bold text-white text-lg group-hover:text-blue-400 transition">{opp.title}</h4>
+                                        <p className="text-slate-400 text-sm mb-4">{opp.company}</p>
 
-                            <div className="flex flex-wrap gap-2 mb-4">
-                                {opp.requiredSkills.map(s => (
-                                    <span key={s} className="text-xs px-2 py-1 bg-white/5 rounded text-slate-300">{s}</span>
+                                        <div className="flex flex-wrap gap-2 mb-4">
+                                            {opp.requiredSkills.map(s => (
+                                                <span key={s} className="text-xs px-2 py-1 bg-white/5 rounded text-slate-300">{s}</span>
+                                            ))}
+                                            {opp.incomeLimit ? (
+                                                <span className="text-xs px-2 py-1 bg-emerald-500/10 rounded text-emerald-300">
+                                                    Income up to {opp.incomeLimit}
+                                                </span>
+                                            ) : null}
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedOpportunity(opp)}
+                                            className="w-full py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition cursor-pointer"
+                                        >
+                                            View Details
+                                        </button>
+                                    </div>
                                 ))}
                             </div>
-
-                            <button className="w-full py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition cursor-pointer">
-                                View Details
-                            </button>
                         </div>
-                    ))}
+                    ) : null}
+
+                    {internshipMatches.length > 0 ? (
+                        <div className="space-y-3">
+                            <div>
+                                <h4 className="text-lg font-semibold text-white">Internships</h4>
+                                <p className="text-sm text-slate-400">Shown based on your saved CGPA and matching skills.</p>
+                            </div>
+                            <div className="grid md:grid-cols-2 gap-4">
+                                {internshipMatches.map((opp) => (
+                                    <div key={opp.id} className="glass-card p-6 rounded-xl border border-white/10 group">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className="text-xs px-2 py-1 rounded bg-blue-500/20 text-blue-400">
+                                                {opp.type}
+                                            </span>
+                                            <span className="text-xs text-slate-500">Match</span>
+                                        </div>
+                                        <h4 className="font-bold text-white text-lg group-hover:text-blue-400 transition">{opp.title}</h4>
+                                        <p className="text-slate-400 text-sm mb-4">{opp.company}</p>
+
+                                        <div className="flex flex-wrap gap-2 mb-4">
+                                            {opp.requiredSkills.map(s => (
+                                                <span key={s} className="text-xs px-2 py-1 bg-white/5 rounded text-slate-300">{s}</span>
+                                            ))}
+                                            {opp.minGpa ? (
+                                                <span className="text-xs px-2 py-1 bg-blue-500/10 rounded text-blue-300">
+                                                    Min CGPA {opp.minGpa}/10
+                                                </span>
+                                            ) : null}
+                                        </div>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedOpportunity(opp)}
+                                            className="w-full py-2 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium transition cursor-pointer"
+                                        >
+                                            View Details
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : null}
                 </div>
             )}
+            {selectedOpportunity ? (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4">
+                    <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900 p-6 shadow-2xl">
+                        <div className="flex items-start justify-between gap-4">
+                            <div>
+                                <p className={`inline-flex rounded px-2 py-1 text-xs ${selectedOpportunity.type === 'Internship' ? 'bg-blue-500/20 text-blue-300' : 'bg-emerald-500/20 text-emerald-300'}`}>
+                                    {selectedOpportunity.type}
+                                </p>
+                                <h4 className="mt-3 text-xl font-bold text-white">{selectedOpportunity.title}</h4>
+                                <p className="text-sm text-slate-400">{selectedOpportunity.company}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setSelectedOpportunity(null)}
+                                className="rounded-lg border border-white/10 px-3 py-1 text-sm text-slate-300 hover:bg-white/5"
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        <p className="mt-4 text-sm leading-6 text-slate-200">
+                            {selectedOpportunity.description || 'No description available for this opportunity.'}
+                        </p>
+
+                        <div className="mt-5 flex flex-wrap gap-2">
+                            {selectedOpportunity.requiredSkills.map((skill) => (
+                                <span key={skill} className="rounded bg-white/5 px-2 py-1 text-xs text-slate-300">
+                                    {skill}
+                                </span>
+                            ))}
+                            {selectedOpportunity.type === 'Internship' && selectedOpportunity.minGpa ? (
+                                <span className="rounded bg-blue-500/10 px-2 py-1 text-xs text-blue-300">
+                                    Minimum CGPA: {selectedOpportunity.minGpa}/10
+                                </span>
+                            ) : null}
+                            {selectedOpportunity.type === 'Scholarship' && selectedOpportunity.incomeLimit ? (
+                                <span className="rounded bg-emerald-500/10 px-2 py-1 text-xs text-emerald-300">
+                                    Family income up to: {selectedOpportunity.incomeLimit}
+                                </span>
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+            ) : null}
         </div>
     );
 };

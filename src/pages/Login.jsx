@@ -1,20 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthProvider';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Mail, Lock } from 'lucide-react';
 import clsx from 'clsx';
 
 const Login = () => {
   const { login, user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [selectedRole, setSelectedRole] = useState('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+
+  useEffect(() => {
+    const nextMessage = location.state?.successMessage;
+    if (!nextMessage) return;
+
+    setSuccessMessage(nextMessage);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.pathname, location.state, navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccessMessage('');
     try {
       const result = await login(email.trim(), password);
       const role = result?.user?.user_metadata?.role || 'student';
@@ -117,6 +128,7 @@ const Login = () => {
         </div>
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
+        {successMessage && <p className="text-green-400 text-sm">{successMessage}</p>}
 
         <button
           type="submit"

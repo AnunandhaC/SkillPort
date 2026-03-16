@@ -11,7 +11,7 @@ const INITIAL_OPPORTUNITIES = [
         title: 'Frontend Developer Internship',
         company: 'TechCorp',
         type: 'Internship',
-        minGpa: 3.5,
+        minGpa: 8.5,
         requiredSkills: ['React', 'JavaScript'],
         description: '3 month summer internship for React developers.'
     },
@@ -20,7 +20,8 @@ const INITIAL_OPPORTUNITIES = [
         title: 'Academic Excellence Scholarship',
         company: 'University Foundation',
         type: 'Scholarship',
-        minGpa: 3.8,
+        minGpa: 9.0,
+        incomeLimit: 500000,
         requiredSkills: [],
         description: 'Scholarship for high achieving students.'
     },
@@ -29,7 +30,7 @@ const INITIAL_OPPORTUNITIES = [
         title: 'Full Stack Engineer',
         company: 'StartupX',
         type: 'Internship',
-        minGpa: 3.0,
+        minGpa: 7.5,
         requiredSkills: ['Node.js', 'React', 'MongoDB'],
         description: 'Fast paced startup environment.'
     }
@@ -60,6 +61,37 @@ export const DataProvider = ({ children }) => {
     const [templates, setTemplates] = useState(INITIAL_TEMPLATES);
     const [users, setUsers] = useState([]); // Mock user registry for Admin
 
+    const loadOpportunities = useCallback(async () => {
+        try {
+            const { data, error } = await supabase
+                .from('opportunities')
+                .select('*')
+                .order('title', { ascending: true });
+
+            if (error) throw error;
+
+            const mapped = (data || []).map((row) => ({
+                id: String(row.id),
+                title: row.title || 'Untitled Opportunity',
+                company: row.company || 'Unknown Organization',
+                type: row.type || 'Internship',
+                minGpa: row.min_gpa ?? row.minGpa ?? '',
+                incomeLimit: row.income_limit ?? row.incomeLimit ?? '',
+                requiredSkills: Array.isArray(row.required_skills)
+                    ? row.required_skills
+                    : Array.isArray(row.requiredSkills)
+                        ? row.requiredSkills
+                        : [],
+                description: row.description || '',
+            }));
+
+            setOpportunities(mapped.length > 0 ? mapped : INITIAL_OPPORTUNITIES);
+        } catch (error) {
+            console.error('Failed to load opportunities from Supabase:', error);
+            setOpportunities(INITIAL_OPPORTUNITIES);
+        }
+    }, []);
+
     const loadPortfolios = useCallback(async () => {
         try {
             const { data, error } = await supabase
@@ -78,6 +110,22 @@ export const DataProvider = ({ children }) => {
                         projects: Array.isArray(row.projects) ? row.projects : [],
                         certifications: Array.isArray(row.certifications) ? row.certifications : [],
                         meta: row.meta && typeof row.meta === 'object' ? row.meta : {},
+                        familyIncome:
+                            row.family_income ??
+                            (row.meta && typeof row.meta === 'object'
+                                ? (
+                                    row.meta.familyIncome ??
+                                    row.meta.annualIncome ??
+                                    row.meta.householdIncome ??
+                                    row.meta.income ??
+                                    ''
+                                )
+                                : ''),
+                        currentGpa:
+                            row.current_gpa ??
+                            (row.meta && typeof row.meta === 'object'
+                                ? (row.meta.currentGpa ?? row.meta.gpa ?? '')
+                                : ''),
                         templateId: row.template_id || 'modern',
                         score: row.score ?? '',
                         facultyFeedback: row.faculty_feedback || '',
@@ -105,29 +153,60 @@ export const DataProvider = ({ children }) => {
         }
 
         loadPortfolios();
+        loadOpportunities();
 
         // Keep dashboards in sync when another role updates portfolio scores/content.
         const pollId = setInterval(() => {
             loadPortfolios();
+            loadOpportunities();
         }, 10000);
 
         return () => {
             clearInterval(pollId);
         };
-    }, [loadPortfolios]);
+    }, [loadOpportunities, loadPortfolios]);
 
     const savePortfolio = async (studentId, data) => {
         if (!studentId) throw new Error('Missing student id.');
         const existing = portfolios[studentId] || {};
+        const existingMeta = existing?.meta && typeof existing.meta === 'object' ? existing.meta : {};
+        const incomingMeta = data?.meta && typeof data.meta === 'object' ? data.meta : {};
+        const mergedMeta = {
+            ...existingMeta,
+            ...incomingMeta,
+        };
 
         const normalized = {
             studentId,
-            about: data?.about || '',
-            skills: Array.isArray(data?.skills) ? data.skills : [],
-            projects: Array.isArray(data?.projects) ? data.projects : [],
-            certifications: Array.isArray(data?.certifications) ? data.certifications : [],
-            meta: data?.meta && typeof data.meta === 'object' ? data.meta : {},
-            templateId: data?.templateId || 'modern',
+            about:
+                data?.about !== undefined
+                    ? data.about || ''
+                    : (existing.about || ''),
+            skills:
+                data?.skills !== undefined
+                    ? (Array.isArray(data?.skills) ? data.skills : [])
+                    : (Array.isArray(existing.skills) ? existing.skills : []),
+            projects:
+                data?.projects !== undefined
+                    ? (Array.isArray(data?.projects) ? data.projects : [])
+                    : (Array.isArray(existing.projects) ? existing.projects : []),
+            certifications:
+                data?.certifications !== undefined
+                    ? (Array.isArray(data?.certifications) ? data.certifications : [])
+                    : (Array.isArray(existing.certifications) ? existing.certifications : []),
+            meta: mergedMeta,
+            familyIncome:
+                data?.familyIncome !== undefined
+                    ? data.familyIncome
+                    : (existing.familyIncome ?? ''),
+            currentGpa:
+                data?.currentGpa !== undefined
+                    ? data.currentGpa
+                    : (existing.currentGpa ?? ''),
+            templateId:
+                data?.templateId !== undefined
+                    ? (data.templateId || 'modern')
+                    : (existing.templateId || 'modern'),
             score: data?.score !== undefined ? data.score : (existing.score ?? ''),
             facultyFeedback:
                 data?.facultyFeedback !== undefined
@@ -136,36 +215,123 @@ export const DataProvider = ({ children }) => {
             lastUpdated: new Date().toISOString(),
         };
 
+        const sanitizedMeta = normalized.meta && typeof normalized.meta === 'object'
+            ? {
+                ...normalized.meta,
+                templatePageCopies: [],
+            }
+            : {};
+
         const payload = {
             about: normalized.about,
             skills: normalized.skills,
             projects: normalized.projects,
             certifications: normalized.certifications,
-            meta: normalized.meta,
+            meta: sanitizedMeta,
+            family_income: normalized.familyIncome === '' ? null : normalized.familyIncome,
+            current_gpa: normalized.currentGpa === '' ? null : normalized.currentGpa,
             template_id: normalized.templateId,
             score: normalized.score === '' ? null : normalized.score,
             faculty_feedback: normalized.facultyFeedback || '',
             last_updated: normalized.lastUpdated,
         };
 
-        // Avoid relying on ON CONFLICT in case existing DB table missed unique constraint on student_id
-        const { data: updatedRows, error: updateError } = await supabase
-            .from('portfolios')
-            .update(payload)
-            .eq('student_id', normalized.studentId)
-            .select('student_id');
-
-        if (updateError) throw updateError;
-
-        if (!updatedRows || updatedRows.length === 0) {
-            const { error: insertError } = await supabase
-                .from('portfolios')
-                .insert({
-                    student_id: normalized.studentId,
-                    ...payload,
-                });
-            if (insertError) throw insertError;
+        const payloadSize = new Blob([JSON.stringify(payload)]).size;
+        if (payloadSize > 500_000) {
+            console.warn(`Large portfolio payload detected: ${payloadSize} bytes`);
         }
+
+        const stripUnsupportedColumns = (currentPayload, error) => {
+            const message = String(error?.message || '');
+            const nextPayload = { ...currentPayload };
+            let changed = false;
+
+            if (message.includes('column "meta"') || message.includes("Could not find the 'meta' column")) {
+                delete nextPayload.meta;
+                changed = true;
+            }
+
+            if (
+                message.includes('column "faculty_feedback"')
+                || message.includes("Could not find the 'faculty_feedback' column")
+            ) {
+                delete nextPayload.faculty_feedback;
+                changed = true;
+            }
+
+            if (
+                message.includes('column "family_income"')
+                || message.includes("Could not find the 'family_income' column")
+            ) {
+                delete nextPayload.family_income;
+                changed = true;
+            }
+
+            if (
+                message.includes('column "current_gpa"')
+                || message.includes("Could not find the 'current_gpa' column")
+            ) {
+                delete nextPayload.current_gpa;
+                changed = true;
+            }
+
+            return changed ? nextPayload : null;
+        };
+
+        const executeWithTimeout = async (builder, label, timeoutMs = 20000) => {
+            const controller = new AbortController();
+            const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+            try {
+                return await builder.abortSignal(controller.signal);
+            } catch (error) {
+                if (error?.name === 'AbortError' || error?.code === 'ABORT_ERR') {
+                    throw new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s. Please try again.`);
+                }
+                throw error;
+            } finally {
+                window.clearTimeout(timeoutId);
+            }
+        };
+
+        const persistPortfolio = async (currentPayload) => {
+            const rowPayload = {
+                student_id: normalized.studentId,
+                ...currentPayload,
+            };
+
+            const attempt = await executeWithTimeout(
+                supabase
+                .from('portfolios')
+                .upsert(rowPayload, { onConflict: 'student_id' }),
+                'Portfolio save'
+            );
+
+            if (!attempt.error) return currentPayload;
+
+            const fallbackPayload = stripUnsupportedColumns(currentPayload, attempt.error);
+            if (!fallbackPayload) throw attempt.error;
+
+            console.warn('Retrying portfolio upsert without unsupported columns:', attempt.error.message);
+
+            const retry = await executeWithTimeout(
+                supabase
+                    .from('portfolios')
+                    .upsert(
+                        {
+                            student_id: normalized.studentId,
+                            ...fallbackPayload,
+                        },
+                        { onConflict: 'student_id' }
+                    ),
+                'Portfolio save retry'
+            );
+
+            if (retry.error) throw retry.error;
+            return fallbackPayload;
+        };
+
+        await persistPortfolio(payload);
 
         setPortfolios((prev) => ({
             ...prev,
@@ -225,6 +391,8 @@ export const DataProvider = ({ children }) => {
                     heroImage: '',
                     profileImage: '',
                 },
+                familyIncome: '',
+                currentGpa: '',
                 templateId: templateKey,
                 score: '',
                 facultyFeedback: 'Demo feedback from faculty will appear here in the real portfolio.',
@@ -262,6 +430,7 @@ export const DataProvider = ({ children }) => {
             users,
             savePortfolio,
             refreshPortfolios: loadPortfolios,
+            refreshOpportunities: loadOpportunities,
             addReview,
             getStudentPortfolio,
             getAllPortfolios,

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
 import { Github, Linkedin, Mail, Menu, X, ChevronUp } from 'lucide-react';
@@ -7,7 +7,93 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
     const { id } = useParams();
     const location = useLocation();
     const { getStudentPortfolio, loading } = useData();
-    let portfolio = portfolioOverride || getStudentPortfolio(id);
+    const normalizeText = (value, fallback = '') => {
+        if (typeof value === 'string') return value;
+        if (value === null || value === undefined) return fallback;
+        return String(value);
+    };
+
+    const normalizeProject = (project) => {
+        const safeProject = project && typeof project === 'object' ? project : {};
+        return {
+            ...safeProject,
+            title: normalizeText(safeProject.title),
+            desc: normalizeText(safeProject.desc),
+            tech: normalizeText(safeProject.tech),
+            year: normalizeText(safeProject.year),
+            image: normalizeText(safeProject.image),
+            imageUrl: normalizeText(safeProject.imageUrl),
+            repoUrl: normalizeText(safeProject.repoUrl),
+            pdfUrl: normalizeText(safeProject.pdfUrl),
+            pdfName: normalizeText(safeProject.pdfName),
+        };
+    };
+
+    const normalizeCertification = (certification) => {
+        const safeCertification = certification && typeof certification === 'object' ? certification : {};
+        return {
+            ...safeCertification,
+            name: normalizeText(safeCertification.name),
+            issuer: normalizeText(safeCertification.issuer),
+        };
+    };
+
+    const normalizeMeta = (meta) => {
+        const safeMeta = meta && typeof meta === 'object' ? meta : {};
+        const stringKeys = [
+            'fullName', 'role', 'education', 'educationYears', 'experience', 'experienceYears',
+            'college', 'company', 'contactEmail', 'linkedinUrl', 'githubUrl', 'heroImage',
+            'profileImage', 'greetingText', 'aboutHeading', 'workHeading', 'contactHeading',
+            'contactLead', 'uniconsProjectNote', 'uniconsFooterText',
+        ];
+        const normalized = { ...safeMeta };
+
+        stringKeys.forEach((key) => {
+            normalized[key] = normalizeText(safeMeta[key]);
+        });
+
+        normalized.templateStyle = safeMeta.templateStyle && typeof safeMeta.templateStyle === 'object'
+            ? {
+                ...safeMeta.templateStyle,
+                fontFamily: normalizeText(safeMeta.templateStyle.fontFamily, 'default'),
+                textScale: Number(safeMeta.templateStyle.textScale || 100),
+            }
+            : { fontFamily: 'default', textScale: 100 };
+
+        normalized.templatePageCopies = Array.isArray(safeMeta.templatePageCopies)
+            ? safeMeta.templatePageCopies.filter((item) => item && typeof item === 'object')
+            : [];
+
+        normalized.templatePages = Array.isArray(safeMeta.templatePages)
+            ? safeMeta.templatePages
+                .filter((item) => item && typeof item === 'object')
+                .map((item) => ({
+                    ...item,
+                    title: normalizeText(item.title),
+                    content: normalizeText(item.content),
+                    image: normalizeText(item.image),
+                }))
+            : [];
+
+        return normalized;
+    };
+
+    const normalizePortfolio = (source, studentIdOverride = undefined) => {
+        if (!source || typeof source !== 'object') return null;
+
+        return {
+            ...source,
+            studentId: normalizeText(source.studentId || studentIdOverride),
+            about: normalizeText(source.about),
+            skills: Array.isArray(source.skills) ? source.skills.map((skill) => normalizeText(skill)).filter(Boolean) : [],
+            projects: Array.isArray(source.projects) ? source.projects.map(normalizeProject) : [],
+            certifications: Array.isArray(source.certifications) ? source.certifications.map(normalizeCertification) : [],
+            meta: normalizeMeta(source.meta),
+            templateId: typeof source.templateId === 'string' && source.templateId.trim() ? source.templateId : 'modern',
+        };
+    };
+
+    let portfolio = normalizePortfolio(portfolioOverride || getStudentPortfolio(id), id);
     const isEditable = Boolean(editable && typeof onPortfolioChange === 'function');
     const [showGlobalEditDock, setShowGlobalEditDock] = useState(true);
 
@@ -26,11 +112,11 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             if (cached) {
                 const parsed = JSON.parse(cached);
                 if (parsed && typeof parsed === 'object') {
-                    portfolio = {
-                        ...portfolio,
+                    portfolio = normalizePortfolio({
+                        ...(portfolio || {}),
                         ...parsed,
                         studentId: id,
-                    };
+                    }, id);
                 }
             }
         } catch (e) {
@@ -38,11 +124,20 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         }
     }
 
-    if (!portfolioOverride && loading) return <div className="text-white text-center mt-20">Loading portfolio...</div>;
-    if (!portfolio) return <div className="text-white text-center mt-20">Portfolio not found or not published.</div>;
+    const isLoadingPortfolio = !portfolioOverride && loading;
+    const isMissingPortfolio = !portfolio;
+    portfolio = portfolio || {
+        studentId: normalizeText(id),
+        about: '',
+        skills: [],
+        projects: [],
+        certifications: [],
+        meta: normalizeMeta({}),
+        templateId: 'modern',
+    };
 
     const { about, skills, projects, certifications, templateId } = portfolio;
-    const globalMeta = portfolio?.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
+    const globalMeta = portfolio.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
     const sectionVisibility = {
         about: true,
         skills: true,
@@ -346,13 +441,41 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             return <Tag className={className}>{value || placeholder}</Tag>;
         }
 
-        const commit = (text) => onCommit(String(text || ''));
+        const elementRef = useRef(null);
+        const isEditingRef = useRef(false);
+
+        useEffect(() => {
+            const nextValue = String(value || '');
+            if (isEditingRef.current) return;
+
+            if (!elementRef.current) return;
+
+            const nextDisplay = nextValue || placeholder;
+            if (elementRef.current.textContent !== nextDisplay) {
+                elementRef.current.textContent = nextDisplay;
+            }
+        }, [value, placeholder]);
+
+        const commit = (text) => {
+            const nextValue = String(text || '');
+            onCommit(nextValue);
+        };
 
         return (
             <Tag
+                ref={elementRef}
                 contentEditable
                 suppressContentEditableWarning
-                onBlur={(e) => commit(e.currentTarget.textContent || '')}
+                onFocus={(e) => {
+                    isEditingRef.current = true;
+                    if (!String(value || '') && e.currentTarget.textContent === placeholder) {
+                        e.currentTarget.textContent = '';
+                    }
+                }}
+                onBlur={(e) => {
+                    isEditingRef.current = false;
+                    commit(e.currentTarget.textContent || '');
+                }}
                 onKeyDown={(e) => {
                     if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape') {
                         e.preventDefault();
@@ -662,6 +785,9 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             </div>
         );
     };
+
+    if (isLoadingPortfolio) return <div className="text-white text-center mt-20">Loading portfolio...</div>;
+    if (isMissingPortfolio) return <div className="text-white text-center mt-20">Portfolio not found or not published.</div>;
 
     // Modern Minimal Template
     if (templateId === 'modern') {
