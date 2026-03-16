@@ -14,9 +14,8 @@ const CATEGORIES = [
 const FacultyEvaluation = () => {
     const { studentId } = useParams();
     const navigate = useNavigate();
-    const { getStudentPortfolio, addReview, savePortfolio, refreshPortfolios } = useData();
+    const { portfolios, addReview, savePortfolio, refreshPortfolios } = useData();
 
-    const [student, setStudent] = useState(null);
     const [categoryScores, setCategoryScores] = useState({
         projectsWork: '',
         skillsExpertise: '',
@@ -25,26 +24,30 @@ const FacultyEvaluation = () => {
         overallImpact: '',
     });
     const [feedback, setFeedback] = useState('');
+    const [isHydrated, setIsHydrated] = useState(false);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
     const SAVE_TIMEOUT_MS = 15000;
+    const student = portfolios[studentId] || null;
 
     useEffect(() => {
-        const p = getStudentPortfolio(studentId);
-        setStudent(p);
-        if (p) {
-            const saved = p.meta?.evaluationCategories || {};
-            setCategoryScores({
-                projectsWork: saved.projectsWork !== undefined && saved.projectsWork !== null ? String(saved.projectsWork) : '',
-                skillsExpertise: saved.skillsExpertise !== undefined && saved.skillsExpertise !== null ? String(saved.skillsExpertise) : '',
-                presentationDesign: saved.presentationDesign !== undefined && saved.presentationDesign !== null ? String(saved.presentationDesign) : '',
-                completenessDepth: saved.completenessDepth !== undefined && saved.completenessDepth !== null ? String(saved.completenessDepth) : '',
-                overallImpact: saved.overallImpact !== undefined && saved.overallImpact !== null ? String(saved.overallImpact) : '',
-            });
-            setFeedback(p.facultyFeedback || '');
-        }
-    }, [getStudentPortfolio, studentId]);
+        setIsHydrated(false);
+    }, [studentId]);
+
+    useEffect(() => {
+        if (isHydrated || !student) return;
+        const saved = student.meta?.evaluationCategories || {};
+        setCategoryScores({
+            projectsWork: saved.projectsWork !== undefined && saved.projectsWork !== null ? String(saved.projectsWork) : '',
+            skillsExpertise: saved.skillsExpertise !== undefined && saved.skillsExpertise !== null ? String(saved.skillsExpertise) : '',
+            presentationDesign: saved.presentationDesign !== undefined && saved.presentationDesign !== null ? String(saved.presentationDesign) : '',
+            completenessDepth: saved.completenessDepth !== undefined && saved.completenessDepth !== null ? String(saved.completenessDepth) : '',
+            overallImpact: saved.overallImpact !== undefined && saved.overallImpact !== null ? String(saved.overallImpact) : '',
+        });
+        setFeedback(student.facultyFeedback || '');
+        setIsHydrated(true);
+    }, [student, isHydrated]);
 
     const withTimeout = (promise, ms) =>
         Promise.race([

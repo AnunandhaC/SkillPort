@@ -9,7 +9,7 @@ import PortfolioView from './PortfolioView';
 
 const PortfolioEditor = () => {
     const { user } = useAuth();
-    const { savePortfolio, templates, loading } = useData();
+    const { savePortfolio, templates, loading, getStudentPortfolio, refreshPortfolios } = useData();
     const navigate = useNavigate();
 
     const normalizedProgram = String(user?.program || '')
@@ -50,43 +50,76 @@ const PortfolioEditor = () => {
     const [btechBranch, setBtechBranch] = useState('cs');
     const [editorMode, setEditorMode] = useState(false);
     const [isExportingTemplate, setIsExportingTemplate] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [saveStatus, setSaveStatus] = useState(null);
     const [initializedForUserId, setInitializedForUserId] = useState(null);
     const livePreviewRef = useRef(null);
     const [newSkillText, setNewSkillText] = useState('');
+    const actionHandledOnMouseDownRef = useRef(false);
+
+    const buildDefaultFormData = () => ({
+        about: '',
+        skills: '',
+        projects: [],
+        certifications: [],
+        meta: {
+            fullName: user?.name || '',
+            role: '',
+            education: '',
+            educationYears: '',
+            experience: '',
+            experienceYears: '',
+            college: '',
+            company: '',
+            contactEmail: user?.email || '',
+            linkedinUrl: '',
+            githubUrl: '',
+            heroImage: '',
+            profileImage: '',
+            templateStyle: {
+                fontFamily: 'default',
+                textScale: 100,
+            },
+            templatePages: [],
+        },
+        templateId: isBArch ? 'barch-red' : 'modern',
+    });
 
     useEffect(() => {
         if (!user?.id || loading || initializedForUserId === user.id) return;
 
-        setFormData({
-            about: '',
-            skills: '',
-            projects: [],
-            certifications: [],
-            meta: {
-                fullName: user?.name || '',
-                role: '',
-                education: '',
-                educationYears: '',
-                experience: '',
-                experienceYears: '',
-                college: '',
-                company: '',
-                contactEmail: user?.email || '',
-                linkedinUrl: '',
-                githubUrl: '',
-                heroImage: '',
-                profileImage: '',
-                templateStyle: {
-                    fontFamily: 'default',
-                    textScale: 100,
+        const existingPortfolio = getStudentPortfolio(user.id);
+        const defaultFormData = buildDefaultFormData();
+
+        if (existingPortfolio) {
+            setFormData({
+                about: existingPortfolio.about || '',
+                skills: Array.isArray(existingPortfolio.skills) ? existingPortfolio.skills : [],
+                projects: Array.isArray(existingPortfolio.projects) ? existingPortfolio.projects : [],
+                certifications: Array.isArray(existingPortfolio.certifications) ? existingPortfolio.certifications : [],
+                meta: {
+                    ...defaultFormData.meta,
+                    ...(existingPortfolio.meta || {}),
+                    fullName: existingPortfolio?.meta?.fullName || user?.name || '',
+                    contactEmail: existingPortfolio?.meta?.contactEmail || user?.email || '',
+                    templateStyle: {
+                        ...defaultFormData.meta.templateStyle,
+                        ...(existingPortfolio?.meta?.templateStyle || {}),
+                    },
+                    templatePages: Array.isArray(existingPortfolio?.meta?.templatePages)
+                        ? existingPortfolio.meta.templatePages
+                        : [],
                 },
-                templatePages: [],
-            },
-            templateId: isBArch ? 'barch-red' : 'modern',
-        });
+                templateId: existingPortfolio.templateId || defaultFormData.templateId,
+            });
+            setInitializedForUserId(user.id);
+            return;
+        }
+
+        setFormData(defaultFormData);
 
         setInitializedForUserId(user.id);
-    }, [user?.id, user?.name, user?.email, isBArch, loading, initializedForUserId]);
+    }, [user?.id, user?.name, user?.email, isBArch, loading, initializedForUserId, getStudentPortfolio]);
 
     const buildPortfolioPayload = () => ({
         ...formData,
@@ -99,6 +132,8 @@ const PortfolioEditor = () => {
                 : formData.templateId,
         meta: {
             ...formData.meta,
+            // Keep page copies in local editor state only; storing full snapshots makes saves heavy and brittle.
+            templatePageCopies: [],
             fullName: formData?.meta?.fullName || user?.name || '',
             contactEmail: formData?.meta?.contactEmail || user?.email || '',
             templateStyle: {
@@ -123,7 +158,28 @@ const PortfolioEditor = () => {
                 .filter(Boolean),
     });
 
+    const flushPendingEdits = async () => {
+        const activeEl = document.activeElement;
+        if (
+            activeEl
+            && (
+                activeEl.tagName === 'INPUT'
+                || activeEl.tagName === 'TEXTAREA'
+                || activeEl.isContentEditable
+            )
+            && typeof activeEl.blur === 'function'
+        ) {
+            activeEl.blur();
+        }
+
+        await Promise.resolve();
+        await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+        await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
+    };
+
     const handleSave = async ({ enforceRequired = false, silent = false } = {}) => {
+        if (isSaving) return false;
+
         if (isBArch && enforceRequired) {
             const requiredFields = [
                 { key: 'fullName', label: 'Full Name' },
@@ -136,20 +192,33 @@ const PortfolioEditor = () => {
                 .map((f) => f.label);
 
             if (missing.length > 0) {
+                setSaveStatus({ type: 'error', text: `Missing required fields: ${missing.join(', ')}` });
                 alert(`Please complete required BArch details: ${missing.join(', ')}`);
                 return false;
             }
         }
 
         try {
-            await savePortfolio(user.id, buildPortfolioPayload());
+            setIsSaving(true);
+            setSaveStatus({ type: 'info', text: 'Preparing your latest edits...' });
+            await flushPendingEdits();
+            const payload = buildPortfolioPayload();
+            setSaveStatus({ type: 'info', text: 'Saving portfolio to Supabase...' });
+            await savePortfolio(user.id, payload);
+            setSaveStatus({ type: 'success', text: 'Portfolio saved successfully.' });
+            refreshPortfolios().catch((refreshError) => {
+                console.warn('Background portfolio refresh failed:', refreshError);
+            });
             if (!silent) alert('Portfolio saved successfully!');
             return true;
         } catch (error) {
             console.error('Failed to save portfolio:', error);
             const message = error?.message || 'Unknown error while saving portfolio.';
+            setSaveStatus({ type: 'error', text: `Failed to save portfolio: ${message}` });
             if (!silent) alert(`Failed to save portfolio: ${message}`);
             return false;
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -174,7 +243,28 @@ const PortfolioEditor = () => {
 
     const handlePublish = async () => {
         const saved = await handleSave({ enforceRequired: true });
-        if (saved) navigate('/student-dashboard');
+        if (saved) {
+            setSaveStatus({ type: 'success', text: 'Portfolio published successfully.' });
+            navigate('/student-dashboard');
+        }
+    };
+
+    const runToolbarAction = async (action) => {
+        await action();
+    };
+
+    const makeMouseDownHandler = (action) => async (event) => {
+        actionHandledOnMouseDownRef.current = true;
+        event.preventDefault();
+        await runToolbarAction(action);
+    };
+
+    const makeClickHandler = (action) => async () => {
+        if (actionHandledOnMouseDownRef.current) {
+            actionHandledOnMouseDownRef.current = false;
+            return;
+        }
+        await runToolbarAction(action);
     };
 
     const handleDownloadTemplate = async () => {
@@ -421,31 +511,52 @@ const PortfolioEditor = () => {
                 <div className="px-4 py-3 rounded-lg text-sm font-medium bg-blue-600 text-white shadow-lg shadow-blue-500/25">
                     Design & Template
                 </div>
+                {saveStatus ? (
+                    <div className={`mx-2 rounded-lg px-3 py-2 text-sm ${
+                        saveStatus.type === 'error'
+                            ? 'bg-red-500/10 text-red-300 border border-red-500/30'
+                            : saveStatus.type === 'info'
+                                ? 'bg-blue-500/10 text-blue-300 border border-blue-500/30'
+                                : 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30'
+                    }`}>
+                        {saveStatus.text}
+                    </div>
+                ) : null}
 
                 <div className="pt-8 px-2 space-y-3">
                     <button
-                        onClick={handlePreview}
+                        type="button"
+                        onMouseDown={makeMouseDownHandler(handlePreview)}
+                        onClick={makeClickHandler(handlePreview)}
                         className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-purple-500/50 text-purple-400 hover:bg-purple-500/10 transition-all"
                     >
                         <Eye size={18} /> Preview Portfolio
                     </button>
                     <button
-                        onClick={handleSave}
+                        type="button"
+                        onMouseDown={makeMouseDownHandler(() => handleSave())}
+                        onClick={makeClickHandler(() => handleSave())}
+                        disabled={isSaving}
                         className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-blue-500/50 text-blue-400 hover:bg-blue-500/10 transition-all"
                     >
-                        <Save size={18} /> Save Draft
+                        <Save size={18} /> {isSaving ? 'Saving...' : 'Save Draft'}
                     </button>
                     <button
-                        onClick={handleDownloadTemplate}
+                        type="button"
+                        onMouseDown={makeMouseDownHandler(handleDownloadTemplate)}
+                        onClick={makeClickHandler(handleDownloadTemplate)}
                         className="flex items-center justify-center gap-2 w-full py-2 rounded-lg border border-cyan-500/50 text-cyan-300 hover:bg-cyan-500/10 transition-all"
                     >
                         <Download size={18} /> Download PDF
                     </button>
                     <button
-                        onClick={handlePublish}
+                        type="button"
+                        onMouseDown={makeMouseDownHandler(handlePublish)}
+                        onClick={makeClickHandler(handlePublish)}
+                        disabled={isSaving}
                         className="flex items-center justify-center gap-2 w-full py-2 rounded-lg bg-green-600 text-white hover:bg-green-500 transition-all shadow-lg shadow-green-500/20"
                     >
-                        <span>Publish Changes</span>
+                        <span>{isSaving ? 'Publishing...' : 'Publish Changes'}</span>
                         <ArrowRight size={18} />
                     </button>
                     <div className="pt-4 border-t border-white/10">
@@ -601,6 +712,30 @@ const PortfolioEditor = () => {
                                         value={formData?.meta?.contactEmail || ''}
                                         onChange={(e) => setMeta('contactEmail', e.target.value)}
                                         placeholder="Contact email"
+                                        className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                    />
+                                    <input
+                                        value={formData?.meta?.education || ''}
+                                        onChange={(e) => setMeta('education', e.target.value)}
+                                        placeholder="Education"
+                                        className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                    />
+                                    <input
+                                        value={formData?.meta?.educationYears || ''}
+                                        onChange={(e) => setMeta('educationYears', e.target.value)}
+                                        placeholder="Education years"
+                                        className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                    />
+                                    <input
+                                        value={formData?.meta?.experience || ''}
+                                        onChange={(e) => setMeta('experience', e.target.value)}
+                                        placeholder="Experience"
+                                        className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                    />
+                                    <input
+                                        value={formData?.meta?.experienceYears || ''}
+                                        onChange={(e) => setMeta('experienceYears', e.target.value)}
+                                        placeholder="Experience years"
                                         className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
                                     />
                                     <input
