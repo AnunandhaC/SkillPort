@@ -310,54 +310,61 @@ const ResumeBuilder = () => {
     };
 
     const generateResumePDF = async () => {
-        await persistResume({ silent: true });
+        try {
+            await persistResume({ silent: true });
 
-        // Lazy load jsPDF only when needed
-        const { default: jsPDF } = await import('jspdf');
-        const doc = new jsPDF('p', 'pt', 'letter'); // Letter size to match LaTeX
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const pageHeight = doc.internal.pageSize.getHeight();
-        const margin = 36; // 0.5in in points
-        let yPos = margin + 8; // Start with small top margin
+            // Lazy load jsPDF only when needed.
+            const jsPdfModule = await import('jspdf');
+            const JsPdfCtor = jsPdfModule.jsPDF || jsPdfModule.default?.jsPDF || jsPdfModule.default;
 
-        // Helper function to add new page if needed
-        const checkPageBreak = (requiredSpace) => {
-            if (yPos + requiredSpace > pageHeight - margin) {
-                doc.addPage();
-                yPos = margin;
+            if (typeof JsPdfCtor !== 'function') {
+                throw new Error('PDF generator failed to load.');
             }
-        };
 
-        // Helper to draw horizontal line
-        const drawSectionLine = () => {
-            doc.setLineWidth(0.5);
-            doc.line(margin, yPos, pageWidth - margin, yPos);
+            const doc = new JsPdfCtor('p', 'pt', 'letter'); // Letter size to match LaTeX
+            const pageWidth = doc.internal.pageSize.getWidth();
+            const pageHeight = doc.internal.pageSize.getHeight();
+            const margin = 36; // 0.5in in points
+            let yPos = margin + 8; // Start with small top margin
+
+            // Helper function to add new page if needed
+            const checkPageBreak = (requiredSpace) => {
+                if (yPos + requiredSpace > pageHeight - margin) {
+                    doc.addPage();
+                    yPos = margin;
+                }
+            };
+
+            // Helper to draw horizontal line
+            const drawSectionLine = () => {
+                doc.setLineWidth(0.5);
+                doc.line(margin, yPos, pageWidth - margin, yPos);
+                yPos += 3;
+            };
+
+            // Header - Name (centered, large, bold)
+            doc.setFontSize(20);
+            doc.setFont(undefined, 'bold');
+            const name = (formData.name || 'Your Name').toUpperCase();
+            doc.text(name, pageWidth / 2, yPos, { align: 'center' });
+            yPos += 12;
+
+            // Contact Information (centered, small)
+            doc.setFontSize(9);
+            doc.setFont(undefined, 'normal');
+            const contactParts = [];
+            if (formData.phone) contactParts.push(formData.phone);
+            if (formData.linkedin) contactParts.push(`linkedin.com/in/${formData.linkedin.split('/').pop() || formData.linkedin}`);
+            if (formData.email) contactParts.push(formData.email);
+            if (formData.github) contactParts.push(`github.com/${formData.github.split('/').pop() || formData.github}`);
+
+            if (contactParts.length > 0) {
+                const contactText = contactParts.join('  ~  ');
+                doc.text(contactText, pageWidth / 2, yPos, { align: 'center' });
+                yPos += 10;
+            }
+
             yPos += 3;
-        };
-
-        // Header - Name (centered, large, bold)
-        doc.setFontSize(20);
-        doc.setFont(undefined, 'bold');
-        const name = (formData.name || 'Your Name').toUpperCase();
-        doc.text(name, pageWidth / 2, yPos, { align: 'center' });
-        yPos += 12;
-
-        // Contact Information (centered, small)
-        doc.setFontSize(9);
-        doc.setFont(undefined, 'normal');
-        const contactParts = [];
-        if (formData.phone) contactParts.push(formData.phone);
-        if (formData.linkedin) contactParts.push(`linkedin.com/in/${formData.linkedin.split('/').pop() || formData.linkedin}`);
-        if (formData.email) contactParts.push(formData.email);
-        if (formData.github) contactParts.push(`github.com/${formData.github.split('/').pop() || formData.github}`);
-        
-        if (contactParts.length > 0) {
-            const contactText = contactParts.join('  ~  ');
-            doc.text(contactText, pageWidth / 2, yPos, { align: 'center' });
-            yPos += 10;
-        }
-
-        yPos += 3;
 
         // Career Objective
         if (formData.careerObjective) {
@@ -597,9 +604,13 @@ const ResumeBuilder = () => {
             });
         }
 
-        // Save PDF
-        const fileName = formData.name ? `${formData.name.replace(/\s+/g, '_')}_Resume.pdf` : 'Resume.pdf';
-        doc.save(fileName);
+            // Save PDF
+            const fileName = formData.name ? `${formData.name.replace(/\s+/g, '_')}_Resume.pdf` : 'Resume.pdf';
+            doc.save(fileName);
+        } catch (error) {
+            console.error('Failed to generate resume PDF:', error);
+            alert(`Failed to generate PDF: ${error?.message || 'Unknown error'}`);
+        }
     };
 
 

@@ -5,7 +5,7 @@ import { Mail, Lock } from 'lucide-react';
 import clsx from 'clsx';
 
 const Login = () => {
-  const { login, user } = useAuth();
+  const { login, user, logout, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [selectedRole, setSelectedRole] = useState('student');
@@ -13,6 +13,7 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const nextMessage = location.state?.successMessage;
@@ -26,19 +27,16 @@ const Login = () => {
     e.preventDefault();
     setError('');
     setSuccessMessage('');
+    setIsSubmitting(true);
     try {
       const result = await login(email.trim(), password);
       const role = result?.user?.user_metadata?.role || 'student';
 
       if (role !== selectedRole) {
+        await logout();
         setError(`This account is registered as ${role}. Please choose ${role} sign in.`);
         return;
       }
-
-      if (role === 'student') navigate('/student-dashboard', { replace: true });
-      else if (role === 'faculty') navigate('/faculty-dashboard', { replace: true });
-      else if (role === 'admin') navigate('/admin-dashboard', { replace: true });
-      else navigate('/', { replace: true });
     } catch (err) {
       const msg = err?.message || 'Failed to sign in';
       if (msg.toLowerCase().includes('email not confirmed')) {
@@ -46,18 +44,20 @@ const Login = () => {
       } else {
         setError(msg);
       }
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   // Redirect after profile (user) is loaded from Supabase
   useEffect(() => {
-    if (!user) return;
+    if (!user || loading) return;
 
-    if (user.role === 'student') navigate('/student-dashboard');
-    else if (user.role === 'faculty') navigate('/faculty-dashboard');
-    else if (user.role === 'admin') navigate('/admin-dashboard');
-    else navigate('/');
-  }, [user, navigate]);
+    if (user.role === 'student') navigate('/student-dashboard', { replace: true });
+    else if (user.role === 'faculty') navigate('/faculty-dashboard', { replace: true });
+    else if (user.role === 'admin') navigate('/admin-dashboard', { replace: true });
+    else navigate('/', { replace: true });
+  }, [user, loading, navigate]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
@@ -132,9 +132,10 @@ const Login = () => {
 
         <button
           type="submit"
+          disabled={isSubmitting || loading}
           className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-semibold py-3 rounded-lg shadow-lg shadow-blue-500/25 transition-all duration-300 transform hover:-translate-y-0.5"
         >
-          Sign In
+          {isSubmitting || loading ? 'Signing In...' : 'Sign In'}
         </button>
       </form>
 

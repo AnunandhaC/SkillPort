@@ -117,12 +117,29 @@ export const AuthProvider = ({ children }) => {
 
   // LOGIN with email + password
   const login = async (email, password) => {
+    setLoading(true);
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
-    if (error) throw error;
+    if (error) {
+      setLoading(false);
+      throw error;
+    }
+
+    const authUser = data?.user;
+    if (authUser) {
+      const metadata = authUser.user_metadata || {};
+      setUser({
+        id: authUser.id,
+        email: authUser.email,
+        role: metadata.role || 'student',
+        name: metadata.full_name || authUser.email?.split('@')[0] || 'User',
+        program: normalizeProgram(metadata.program),
+      });
+    }
+
     // profile will be loaded by onAuthStateChange
     return data;
   };
@@ -143,9 +160,16 @@ export const AuthProvider = ({ children }) => {
 
     if (error) throw error;
 
-    // Ensure a row exists in profiles (required: profiles table + RLS - run supabase/migrations/001_profiles.sql)
+    if (!data.user?.id) {
+      throw new Error('Account could not be created. Please try again.');
+    }
+
+    // Best effort: ensure a row exists in profiles when a session is available.
+    // If email confirmation is enabled, Supabase may create the auth user without
+    // creating a client session yet, so app-side RLS-protected upserts can fail
+    // even though the account itself was created successfully.
     const userId = data.user?.id;
-    if (userId) {
+    if (userId && data.session) {
       const { error: profileError } = await supabase
         .from('profiles')
         .upsert(
@@ -159,8 +183,7 @@ export const AuthProvider = ({ children }) => {
           { onConflict: 'id' }
         );
       if (profileError) {
-        console.error('Profile save failed (check profiles table + RLS):', profileError);
-        throw new Error(profileError.message || 'Account created but profile could not be saved. Please contact support.');
+        console.warn('Profile save failed after signup; relying on DB trigger/profile sync:', profileError);
       }
     }
 
