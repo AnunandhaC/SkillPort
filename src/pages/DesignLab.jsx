@@ -1,11 +1,21 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { DesignStoreProvider, useDesignStore } from '../editor/designStore.jsx';
 import DesignCanvas from '../editor/DesignCanvas';
-import { createBasicPortfolioTemplate, createUniconsDocumentFromPortfolio } from '../editor/designSchema';
+import { createBasicPortfolioTemplate, createEmptyDocument, createUniconsDocumentFromPortfolio } from '../editor/designSchema';
 import { useAuth } from '../context/AuthProvider';
 import { useData } from '../context/DataProvider';
+import PortfolioView from './PortfolioView';
 
-const Toolbar = () => {
+const buildDocumentForCreateMode = () => {
+    const blankDoc = createEmptyDocument();
+    return {
+        ...blankDoc,
+        templateId: 'custom-template',
+    };
+};
+
+const TemplateCanvasToolbar = () => {
     const { canUndo, canRedo, undo, redo, setDocument } = useDesignStore();
     const { user } = useAuth();
     const { getStudentPortfolio } = useData();
@@ -71,19 +81,96 @@ const Toolbar = () => {
     );
 };
 
-const DesignLabInner = () => (
-    <div className="p-6 md:p-8">
-        <h1 className="text-2xl font-bold text-white mb-2">Design Lab (Canva-like Scaffold)</h1>
-        <p className="text-slate-400 mb-6">Structured document model + draggable nodes + inline text + undo/redo. Unicons template is now available in document format.</p>
-        <Toolbar />
-        <DesignCanvas />
-    </div>
-);
+const CreateTemplateLab = () => {
+    const initialDocument = useMemo(() => buildDocumentForCreateMode(), []);
 
-const DesignLab = () => (
-    <DesignStoreProvider>
-        <DesignLabInner />
-    </DesignStoreProvider>
-);
+    return (
+        <DesignStoreProvider initialDocument={initialDocument}>
+            <div className="p-6 md:p-8">
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h1 className="text-2xl font-bold text-white mb-2">Create New Template</h1>
+                        <p className="text-slate-400">Blank canvas mode for creating a new template structure.</p>
+                    </div>
+                    <Link
+                        to="/admin-dashboard"
+                        className="px-3 py-2 rounded-lg border border-slate-600 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                    >
+                        Back to Admin
+                    </Link>
+                </div>
+                <TemplateCanvasToolbar />
+                <DesignCanvas />
+            </div>
+        </DesignStoreProvider>
+    );
+};
+
+const TemplatePreviewEditor = ({ templateId }) => {
+    const { getStudentPortfolio } = useData();
+    const initialTemplatePortfolio = useMemo(() => {
+        const source = getStudentPortfolio(`demo-${templateId}`) || getStudentPortfolio('demo-modern');
+        return {
+            ...source,
+            templateId: templateId || source?.templateId || 'modern',
+        };
+    }, [getStudentPortfolio, templateId]);
+
+    const [draftPortfolio, setDraftPortfolio] = useState(initialTemplatePortfolio);
+
+    useEffect(() => {
+        setDraftPortfolio(initialTemplatePortfolio);
+    }, [initialTemplatePortfolio]);
+
+    return (
+        <div className="p-6 md:p-8 space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <h1 className="text-2xl font-bold text-white mb-2">Edit Template</h1>
+                    <p className="text-slate-400">
+                        Template preview editor for <span className="font-mono text-slate-200">{templateId || 'modern'}</span>.
+                    </p>
+                </div>
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={() => setDraftPortfolio(initialTemplatePortfolio)}
+                        className="px-3 py-2 rounded-lg border border-slate-600 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                    >
+                        Reset Demo Content
+                    </button>
+                    <Link
+                        to="/admin-dashboard"
+                        className="px-3 py-2 rounded-lg border border-slate-600 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                    >
+                        Back to Admin
+                    </Link>
+                </div>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-slate-950/40 overflow-hidden">
+                <PortfolioView
+                    portfolioOverride={draftPortfolio}
+                    editable
+                    onPortfolioChange={setDraftPortfolio}
+                    hideFooterBadge
+                />
+            </div>
+        </div>
+    );
+};
+
+const DesignLab = () => {
+    const location = useLocation();
+    const params = new URLSearchParams(location.search);
+    const mode = params.get('action') === 'create' ? 'create' : 'edit';
+    const templateId = params.get('template') || 'modern';
+
+    if (mode === 'create') {
+        return <CreateTemplateLab />;
+    }
+
+    return <TemplatePreviewEditor templateId={templateId} />;
+};
 
 export default DesignLab;

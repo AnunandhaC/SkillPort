@@ -92,6 +92,62 @@ export const DataProvider = ({ children }) => {
         }
     }, []);
 
+    const createOpportunity = async (data) => {
+        const title = String(data?.title || '').trim();
+        const company = String(data?.company || '').trim();
+        const type = String(data?.type || 'Internship').trim() || 'Internship';
+        const description = String(data?.description || '').trim();
+        const requiredSkills = Array.isArray(data?.requiredSkills)
+            ? data.requiredSkills.map((skill) => String(skill || '').trim()).filter(Boolean)
+            : String(data?.requiredSkills || '')
+                .split(',')
+                .map((skill) => skill.trim())
+                .filter(Boolean);
+
+        const parseOptionalNumber = (value) => {
+            const normalized = String(value ?? '').replace(/,/g, '').trim();
+            if (!normalized) return null;
+            const parsed = Number(normalized);
+            return Number.isFinite(parsed) ? parsed : null;
+        };
+
+        if (!title) throw new Error('Opportunity title is required.');
+        if (!company) throw new Error('Company or organization is required.');
+        if (!description) throw new Error('Opportunity description is required.');
+
+        const payload = {
+            title,
+            company,
+            type,
+            description,
+            min_gpa: parseOptionalNumber(data?.minGpa),
+            income_limit: type === 'Scholarship' ? parseOptionalNumber(data?.incomeLimit) : null,
+            required_skills: requiredSkills,
+        };
+
+        const { data: inserted, error } = await supabase
+            .from('opportunities')
+            .insert(payload)
+            .select()
+            .single();
+
+        if (error) throw error;
+
+        const mapped = {
+            id: String(inserted.id),
+            title: inserted.title || title,
+            company: inserted.company || company,
+            type: inserted.type || type,
+            minGpa: inserted.min_gpa ?? '',
+            incomeLimit: inserted.income_limit ?? '',
+            requiredSkills: Array.isArray(inserted.required_skills) ? inserted.required_skills : requiredSkills,
+            description: inserted.description || description,
+        };
+
+        setOpportunities((prev) => [...prev, mapped].sort((a, b) => a.title.localeCompare(b.title)));
+        return mapped;
+    };
+
     const loadPortfolios = useCallback(async () => {
         try {
             const { data, error } = await supabase
@@ -407,6 +463,66 @@ export const DataProvider = ({ children }) => {
 
     const getAllPortfolios = () => Object.entries(portfolios).map(([id, data]) => ({ studentId: id, ...data }));
 
+    const getPortfolioCompletion = (portfolio) => {
+        if (!portfolio) {
+            return {
+                percentage: 0,
+                completedCount: 0,
+                totalCount: 5,
+                criteria: [
+                    { key: 'about', label: 'About section', completed: false },
+                    { key: 'skills', label: 'Skills added', completed: false },
+                    { key: 'projects', label: 'Projects added', completed: false },
+                    { key: 'certifications', label: 'Certifications added', completed: false },
+                    { key: 'profileDetails', label: 'Profile details added', completed: false },
+                ],
+            };
+        }
+
+        const meta = portfolio?.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
+        const criteria = [
+            {
+                key: 'about',
+                label: 'About section',
+                completed: Boolean(portfolio.about && portfolio.about.trim().length >= 50),
+            },
+            {
+                key: 'skills',
+                label: 'Skills added',
+                completed: Array.isArray(portfolio.skills) && portfolio.skills.length > 0,
+            },
+            {
+                key: 'projects',
+                label: 'Projects added',
+                completed: Array.isArray(portfolio.projects) && portfolio.projects.length > 0,
+            },
+            {
+                key: 'certifications',
+                label: 'Certifications added',
+                completed: Array.isArray(portfolio.certifications) && portfolio.certifications.length > 0,
+            },
+            {
+                key: 'profileDetails',
+                label: 'Profile details added',
+                completed: Boolean(
+                    (meta.fullName && String(meta.fullName).trim())
+                    || (meta.role && String(meta.role).trim())
+                    || (meta.contactEmail && String(meta.contactEmail).trim())
+                ),
+            },
+        ];
+
+        const completedCount = criteria.filter((item) => item.completed).length;
+        const totalCount = criteria.length;
+
+        return {
+            percentage: Math.round((completedCount / totalCount) * 100),
+            completedCount,
+            totalCount,
+            criteria,
+        };
+    };
+
     // Helper for UC2: Suggestions
     const analyzePortfolio = (portfolio) => {
         const suggestions = [];
@@ -429,11 +545,13 @@ export const DataProvider = ({ children }) => {
             templates,
             users,
             savePortfolio,
+            createOpportunity,
             refreshPortfolios: loadPortfolios,
             refreshOpportunities: loadOpportunities,
             addReview,
             getStudentPortfolio,
             getAllPortfolios,
+            getPortfolioCompletion,
             analyzePortfolio // Exposed for UC2
         }}>
             {children}
