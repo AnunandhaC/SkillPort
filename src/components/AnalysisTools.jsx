@@ -3,8 +3,9 @@ import { useData } from '../context/DataProvider';
 import { AlertCircle, Briefcase, GraduationCap, Download, FileText, FileDown, Send, Bot, User, Sparkles } from 'lucide-react';
 
 export const SuggestionEngine = ({ portfolio }) => {
-    const { analyzePortfolio } = useData();
+    const { analyzePortfolio, getPortfolioCompletion } = useData();
     const suggestions = useMemo(() => analyzePortfolio(portfolio), [portfolio, analyzePortfolio]);
+    const completion = useMemo(() => getPortfolioCompletion(portfolio), [portfolio, getPortfolioCompletion]);
     const [messages, setMessages] = useState([]);
     const [inputValue, setInputValue] = useState('');
     const [isTyping, setIsTyping] = useState(false);
@@ -17,7 +18,7 @@ export const SuggestionEngine = ({ portfolio }) => {
             const welcomeMessage = {
                 id: Date.now(),
                 type: 'bot',
-                text: `Hello! I'm your Portfolio Assistant. I can help you improve your portfolio and answer questions about it. ${suggestions.length > 0 ? 'I have some suggestions for you:' : 'Your portfolio looks great!'}`
+                text: `Hello! I'm your Portfolio Assistant. Your portfolio is ${completion.percentage}% complete (${completion.completedCount}/${completion.totalCount} criteria finished). ${suggestions.length > 0 ? 'I have some suggestions for you:' : 'Your portfolio looks great!'}`
             };
             const initialMessages = [welcomeMessage];
             
@@ -39,7 +40,7 @@ export const SuggestionEngine = ({ portfolio }) => {
             
             setMessages(initialMessages);
         }
-    }, [portfolio, suggestions]);
+    }, [portfolio, suggestions, completion, messages.length]);
 
     // Auto-scroll to bottom when new messages arrive
     useEffect(() => {
@@ -48,13 +49,27 @@ export const SuggestionEngine = ({ portfolio }) => {
 
     const generateResponse = (userMessage) => {
         const lowerMessage = userMessage.toLowerCase();
+        const missingCriteria = completion.criteria.filter((item) => !item.completed);
+
+        if (
+            lowerMessage.includes('percentage')
+            || lowerMessage.includes('percent')
+            || lowerMessage.includes('completion')
+            || lowerMessage.includes('complete')
+        ) {
+            if (missingCriteria.length === 0) {
+                return `Your portfolio is ${completion.percentage}% complete. You've finished all ${completion.totalCount} portfolio criteria.`;
+            }
+
+            return `Your portfolio is ${completion.percentage}% complete (${completion.completedCount}/${completion.totalCount} criteria done).\n\nTo improve it further, add:\n${missingCriteria.map((item, index) => `${index + 1}. ${item.label}`).join('\n')}`;
+        }
         
         // Portfolio analysis queries
         if (lowerMessage.includes('suggest') || lowerMessage.includes('improve') || lowerMessage.includes('help')) {
             if (suggestions.length > 0) {
-                return `Based on your portfolio, here are my recommendations:\n\n${suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n\n')}\n\nWould you like me to elaborate on any of these?`;
+                return `Your portfolio is currently ${completion.percentage}% complete.\n\nBased on your portfolio, here are my recommendations:\n\n${suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n\n')}\n\nWould you like me to elaborate on any of these?`;
             }
-            return 'Your portfolio looks great! To make it even better, consider adding more detailed project descriptions, showcasing your best work prominently, and keeping your skills section updated.';
+            return `Your portfolio is ${completion.percentage}% complete and looks great! To make it even better, consider adding more detailed project descriptions, showcasing your best work prominently, and keeping your skills section updated.`;
         }
 
         // Skills related
@@ -130,9 +145,9 @@ export const SuggestionEngine = ({ portfolio }) => {
             if (!portfolio?.certifications || portfolio.certifications.length === 0) missing.push('Certifications');
             
             if (missing.length > 0) {
-                return `Your portfolio could benefit from:\n\n${missing.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nThese elements help create a complete and professional portfolio that showcases your full potential!`;
+                return `Your portfolio is ${completion.percentage}% complete.\n\nYour portfolio could benefit from:\n\n${missing.map((m, i) => `${i + 1}. ${m}`).join('\n')}\n\nThese elements help create a complete and professional portfolio that showcases your full potential!`;
             }
-            return 'Your portfolio has all the essential elements! Consider adding more details, updating content regularly, and showcasing your best work prominently.';
+            return `Your portfolio is ${completion.percentage}% complete and has all the essential elements! Consider adding more details, updating content regularly, and showcasing your best work prominently.`;
         }
 
         // Default responses

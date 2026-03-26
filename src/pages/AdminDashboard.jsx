@@ -1,21 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import { useData } from '../context/DataProvider';
-import { useAuth } from '../context/AuthProvider';
+import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabaseClient';
-import { Users, Layout, Plus } from 'lucide-react';
+import { Layout, Plus } from 'lucide-react';
 
 const AdminDashboard = () => {
-    const { templates } = useData();
-    const { createFaculty } = useAuth();
+    const { templates, opportunities, createOpportunity } = useData();
+    const navigate = useNavigate();
     const [activeTab, setActiveTab] = useState('users');
     const [users, setUsers] = useState([]);
     const [loadingUsers, setLoadingUsers] = useState(true);
     const [error, setError] = useState('');
-    const [success, setSuccess] = useState('');
-    const [facultyForm, setFacultyForm] = useState({
-        name: '',
-        email: '',
-        password: '',
+    const [opportunityStatus, setOpportunityStatus] = useState('');
+    const [isSavingOpportunity, setIsSavingOpportunity] = useState(false);
+    const [opportunityForm, setOpportunityForm] = useState({
+        title: '',
+        company: '',
+        type: 'Internship',
+        minGpa: '',
+        incomeLimit: '',
+        requiredSkills: '',
+        description: '',
     });
 
     const loadUsers = async () => {
@@ -38,26 +43,6 @@ const AdminDashboard = () => {
         loadUsers();
     }, []);
 
-    const handleCreateFaculty = async (e) => {
-        e.preventDefault();
-        setError('');
-        setSuccess('');
-
-        try {
-            await createFaculty({
-                name: facultyForm.name,
-                email: facultyForm.email,
-                password: facultyForm.password,
-            });
-
-            setSuccess('Faculty account created successfully.');
-            setFacultyForm({ name: '', email: '', password: '' });
-            await loadUsers();
-        } catch (createError) {
-            setError(createError.message || 'Failed to create faculty account.');
-        }
-    };
-
     return (
         <div className="space-y-8">
             <div>
@@ -78,56 +63,18 @@ const AdminDashboard = () => {
                 >
                     Template Management
                 </button>
+                <button
+                    onClick={() => setActiveTab('opportunities')}
+                    className={`px-4 py-2 text-sm font-medium border-b-2 transition ${activeTab === 'opportunities' ? 'border-blue-500 text-blue-400' : 'border-transparent text-slate-400'}`}
+                >
+                    Opportunity Management
+                </button>
             </div>
 
             {activeTab === 'users' && (
                 <div className="space-y-6">
-                    <div className="glass-panel rounded-xl p-6">
-                        <h2 className="text-xl font-bold text-white mb-4">Add New Faculty</h2>
-                        <form onSubmit={handleCreateFaculty} className="grid grid-cols-1 md:grid-cols-4 gap-3" autoComplete="off">
-                            <input
-                                type="text"
-                                required
-                                name="faculty_full_name"
-                                autoComplete="off"
-                                value={facultyForm.name}
-                                onChange={(e) => setFacultyForm({ ...facultyForm, name: e.target.value })}
-                                placeholder="Full Name"
-                                className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                            <input
-                                type="email"
-                                required
-                                name="faculty_email"
-                                autoComplete="off"
-                                value={facultyForm.email}
-                                onChange={(e) => setFacultyForm({ ...facultyForm, email: e.target.value })}
-                                placeholder="Email"
-                                className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                            <input
-                                type="password"
-                                required
-                                minLength={6}
-                                name="faculty_temp_password"
-                                autoComplete="new-password"
-                                value={facultyForm.password}
-                                onChange={(e) => setFacultyForm({ ...facultyForm, password: e.target.value })}
-                                placeholder="Temporary Password"
-                                className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                            <button
-                                type="submit"
-                                className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-4 py-2.5 font-medium transition"
-                            >
-                                Create Faculty
-                            </button>
-                        </form>
-                        {error && <p className="text-sm text-red-400 mt-3">{error}</p>}
-                        {success && <p className="text-sm text-green-400 mt-3">{success}</p>}
-                    </div>
-
                     <div className="glass-panel rounded-xl overflow-hidden">
+                    {error && <p className="px-6 pt-4 text-sm text-red-400">{error}</p>}
                     <table className="w-full text-left text-sm text-slate-400">
                         <thead className="bg-white/5 text-slate-200 font-bold uppercase text-xs">
                             <tr>
@@ -172,13 +119,171 @@ const AdminDashboard = () => {
                             </div>
                             <h3 className="text-lg font-bold text-white mb-2">{t.name}</h3>
                             <p className="text-sm text-slate-400 mb-4">{t.description}</p>
-                            <button className="text-sm text-blue-400 hover:text-blue-300 font-medium">Edit Template</button>
+                            <button
+                                type="button"
+                                onClick={() => navigate(`/design-lab?action=edit&template=${encodeURIComponent(t.id)}`)}
+                                className="text-sm text-blue-400 hover:text-blue-300 font-medium"
+                            >
+                                Edit Template
+                            </button>
                         </div>
                     ))}
-                    <button className="border-2 border-dashed border-white/10 rounded-xl flex flex-col items-center justify-center p-6 text-slate-500 hover:border-blue-500/50 hover:text-blue-400 transition cursor-pointer">
+                    <button
+                        type="button"
+                        onClick={() => navigate('/design-lab?action=create')}
+                        className="border-2 border-dashed border-white/10 rounded-xl flex flex-col items-center justify-center p-6 text-slate-500 hover:border-blue-500/50 hover:text-blue-400 transition cursor-pointer"
+                    >
                         <Plus size={32} className="mb-2" />
                         <span className="font-medium">Add New Template</span>
                     </button>
+                </div>
+            )}
+
+            {activeTab === 'opportunities' && (
+                <div className="space-y-6">
+                    <div className="glass-panel rounded-xl p-6">
+                        <h2 className="text-xl font-bold text-white mb-2">Add New Opportunity</h2>
+                        <p className="text-sm text-slate-400 mb-5">
+                            Enter the opportunity details you want students to see and match against.
+                        </p>
+
+                        <form
+                            onSubmit={async (e) => {
+                                e.preventDefault();
+                                setOpportunityStatus('');
+                                setError('');
+
+                                try {
+                                    setIsSavingOpportunity(true);
+                                    await createOpportunity({
+                                        ...opportunityForm,
+                                        incomeLimit: opportunityForm.type === 'Scholarship' ? opportunityForm.incomeLimit : '',
+                                    });
+                                    setOpportunityStatus('Opportunity added successfully.');
+                                    setOpportunityForm({
+                                        title: '',
+                                        company: '',
+                                        type: 'Internship',
+                                        minGpa: '',
+                                        incomeLimit: '',
+                                        requiredSkills: '',
+                                        description: '',
+                                    });
+                                } catch (saveError) {
+                                    setError(saveError.message || 'Failed to add opportunity.');
+                                } finally {
+                                    setIsSavingOpportunity(false);
+                                }
+                            }}
+                            className="grid grid-cols-1 md:grid-cols-2 gap-4"
+                        >
+                            <input
+                                type="text"
+                                value={opportunityForm.title}
+                                onChange={(e) => setOpportunityForm((prev) => ({ ...prev, title: e.target.value }))}
+                                placeholder="Opportunity title"
+                                className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                                required
+                            />
+                            <input
+                                type="text"
+                                value={opportunityForm.company}
+                                onChange={(e) => setOpportunityForm((prev) => ({ ...prev, company: e.target.value }))}
+                                placeholder="Company / organization"
+                                className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                                required
+                            />
+                            <select
+                                value={opportunityForm.type}
+                                onChange={(e) => setOpportunityForm((prev) => ({ ...prev, type: e.target.value, incomeLimit: e.target.value === 'Scholarship' ? prev.incomeLimit : '' }))}
+                                className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                            >
+                                <option value="Internship">Internship</option>
+                                <option value="Scholarship">Scholarship</option>
+                            </select>
+                            <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                max="10"
+                                value={opportunityForm.minGpa}
+                                onChange={(e) => setOpportunityForm((prev) => ({ ...prev, minGpa: e.target.value }))}
+                                placeholder="Minimum CGPA"
+                                className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            {opportunityForm.type === 'Scholarship' && (
+                                <input
+                                    type="number"
+                                    min="0"
+                                    value={opportunityForm.incomeLimit}
+                                    onChange={(e) => setOpportunityForm((prev) => ({ ...prev, incomeLimit: e.target.value }))}
+                                    placeholder="Maximum family income"
+                                    className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                            )}
+                            <input
+                                type="text"
+                                value={opportunityForm.requiredSkills}
+                                onChange={(e) => setOpportunityForm((prev) => ({ ...prev, requiredSkills: e.target.value }))}
+                                placeholder="Required skills, comma separated"
+                                className="md:col-span-2 bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                            <textarea
+                                value={opportunityForm.description}
+                                onChange={(e) => setOpportunityForm((prev) => ({ ...prev, description: e.target.value }))}
+                                placeholder="Opportunity description"
+                                rows={4}
+                                className="md:col-span-2 bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
+                                required
+                            />
+                            <div className="md:col-span-2 flex items-center justify-between gap-4">
+                                <div>
+                                    {error && <p className="text-sm text-red-400">{error}</p>}
+                                    {opportunityStatus && <p className="text-sm text-green-400">{opportunityStatus}</p>}
+                                </div>
+                                <button
+                                    type="submit"
+                                    disabled={isSavingOpportunity}
+                                    className="bg-blue-600 hover:bg-blue-500 text-white rounded-lg px-5 py-2.5 font-medium transition disabled:opacity-60"
+                                >
+                                    {isSavingOpportunity ? 'Saving...' : 'Add Opportunity'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div className="glass-panel rounded-xl overflow-hidden">
+                        <div className="px-6 py-4 border-b border-white/10">
+                            <h3 className="text-lg font-semibold text-white">Existing Opportunities</h3>
+                            <p className="text-sm text-slate-400">{opportunities.length} total opportunities</p>
+                        </div>
+                        <div className="divide-y divide-white/5">
+                            {opportunities.map((opp) => (
+                                <div key={opp.id} className="px-6 py-4">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <h4 className="text-white font-medium">{opp.title}</h4>
+                                            <p className="text-sm text-slate-400">{opp.company} • {opp.type}</p>
+                                        </div>
+                                        <div className="text-sm text-slate-400">
+                                            {opp.minGpa !== '' && opp.minGpa !== null ? `Min CGPA ${opp.minGpa}` : 'No CGPA cutoff'}
+                                            {opp.type === 'Scholarship' && opp.incomeLimit ? ` • Income up to ${opp.incomeLimit}` : ''}
+                                        </div>
+                                    </div>
+                                    <p className="text-sm text-slate-300 mt-2">{opp.description}</p>
+                                    {opp.requiredSkills?.length > 0 && (
+                                        <div className="flex flex-wrap gap-2 mt-3">
+                                            {opp.requiredSkills.map((skill) => (
+                                                <span key={`${opp.id}-${skill}`} className="px-2 py-1 rounded-full bg-blue-500/10 text-blue-300 text-xs border border-blue-500/20">
+                                                    {skill}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
