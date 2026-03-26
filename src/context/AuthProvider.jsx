@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabaseClient';
 
 const AuthContext = createContext(null);
@@ -14,17 +14,12 @@ export const AuthProvider = ({ children }) => {
     return null;
   };
 
-  // Load session + profile on app start (failsafe: never block rendering forever)
-  useEffect(() => {
-    let alive = true;
-    const setUserSafe = (value) => {
-      if (alive) setUser(value);
-    };
-    const setLoadingSafe = (value) => {
-      if (alive) setLoading(value);
-    };
+  const syncUserFromSession = useCallback(async (authUser, options = {}) => {
+      const {
+        setUserSafe = setUser,
+        setLoadingSafe = setLoading,
+      } = options;
 
-    const syncUserFromSession = async (authUser) => {
       if (!authUser) {
         setUserSafe(null);
         setLoadingSafe(false);
@@ -90,18 +85,28 @@ export const AuthProvider = ({ children }) => {
       } finally {
         setLoadingSafe(false);
       }
+    }, []);
+
+  // Load session + profile on app start (failsafe: never block rendering forever)
+  useEffect(() => {
+    let alive = true;
+    const setUserSafe = (value) => {
+      if (alive) setUser(value);
+    };
+    const setLoadingSafe = (value) => {
+      if (alive) setLoading(value);
     };
 
     // Subscribe first (so we catch fast auth events), then load current session
     const { data: authListener } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      await syncUserFromSession(session?.user || null);
+      await syncUserFromSession(session?.user || null, { setUserSafe, setLoadingSafe });
     });
 
     (async () => {
       try {
         const { data, error } = await supabase.auth.getSession();
         if (error) throw error;
-        await syncUserFromSession(data?.session?.user || null);
+        await syncUserFromSession(data?.session?.user || null, { setUserSafe, setLoadingSafe });
       } catch (err) {
         console.error('Error initializing auth session', err);
         setUserSafe(null);
@@ -113,17 +118,18 @@ export const AuthProvider = ({ children }) => {
       alive = false;
       authListener?.subscription?.unsubscribe();
     };
-  }, []);
+  }, [syncUserFromSession]);
 
   // LOGIN with email + password
   const login = async (email, password) => {
+    setLoading(true);
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) throw error;
-    // profile will be loaded by onAuthStateChange
+    await syncUserFromSession(data?.user || null);
     return data;
   };
 

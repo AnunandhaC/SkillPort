@@ -6,7 +6,7 @@ import { Github, Linkedin, Mail, Menu, X, ChevronUp } from 'lucide-react';
 const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolioChange = null, hideFooterBadge = false, suppressTemplateCopies = false, exportMode = false }) => {
     const { id } = useParams();
     const location = useLocation();
-    const { getStudentPortfolio, loading } = useData();
+    const { getStudentPortfolio, getTemplateById, loading } = useData();
     const normalizeText = (value, fallback = '') => {
         if (typeof value === 'string') return value;
         if (value === null || value === undefined) return fallback;
@@ -95,8 +95,6 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
 
     let portfolio = normalizePortfolio(portfolioOverride || getStudentPortfolio(id), id);
     const isEditable = Boolean(editable && typeof onPortfolioChange === 'function');
-    const [showGlobalEditDock, setShowGlobalEditDock] = useState(true);
-
     const isPreviewMode = (() => {
         if (portfolioOverride) return false;
         try {
@@ -138,6 +136,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
 
     const { about, skills, projects, certifications, templateId } = portfolio;
     const globalMeta = portfolio.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
+    const templateConfig = getTemplateById(templateId);
     const sectionVisibility = {
         about: true,
         skills: true,
@@ -148,11 +147,12 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         testimonials: true,
         contact: true,
         extraPages: true,
+        ...(templateConfig?.defaultSectionVisibility || {}),
         ...(globalMeta.sectionVisibility || {}),
     };
     const showSection = (key) => sectionVisibility[key] !== false;
     const templateStyle = portfolio?.meta?.templateStyle || {};
-    const templatePageCopies = Array.isArray(portfolio?.meta?.templatePageCopies) ? portfolio.meta.templatePageCopies : [];
+    const templatePages = Array.isArray(portfolio?.meta?.templatePages) ? portfolio.meta.templatePages : [];
     const fontFamilyMap = {
         default: undefined,
         poppins: "'Poppins', 'Segoe UI', sans-serif",
@@ -424,13 +424,28 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         }));
     };
 
-    const removeTemplatePageCopy = (index) => {
+    const updateTemplatePage = (index, patch) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => {
+            const nextPages = Array.isArray(prev?.meta?.templatePages) ? [...prev.meta.templatePages] : [];
+            nextPages[index] = { ...(nextPages[index] || {}), ...patch };
+            return {
+                ...prev,
+                meta: {
+                    ...(prev.meta || {}),
+                    templatePages: nextPages,
+                },
+            };
+        });
+    };
+
+    const removeTemplatePage = (index) => {
         if (!isEditable) return;
         onPortfolioChange((prev) => ({
             ...prev,
             meta: {
                 ...(prev.meta || {}),
-                templatePageCopies: (Array.isArray(prev?.meta?.templatePageCopies) ? prev.meta.templatePageCopies : []).filter((_, i) => i !== index),
+                templatePages: (Array.isArray(prev?.meta?.templatePages) ? prev.meta.templatePages : []).filter((_, i) => i !== index),
             },
         }));
     };
@@ -492,138 +507,6 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
     // Tiny "Made with" banner
     const Footer = () => (
         <>
-            {isEditable && !exportMode && (
-                <div className="fixed bottom-4 left-4 z-[60] w-[min(420px,calc(100vw-2rem))] rounded-xl border border-slate-300 bg-white/95 p-3 shadow-xl backdrop-blur">
-                    <div className="mb-2 flex items-center justify-between">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-slate-600">Quick Edit: Skills + Work</div>
-                        <button
-                            type="button"
-                            onClick={() => setShowGlobalEditDock((v) => !v)}
-                            className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-600 hover:bg-slate-100"
-                        >
-                            {showGlobalEditDock ? 'Hide' : 'Show'}
-                        </button>
-                    </div>
-
-                    {showGlobalEditDock && (
-                        <div className="max-h-[55vh] space-y-3 overflow-auto pr-1">
-                            <div className="space-y-2">
-                                <div className="flex items-center justify-between">
-                                    <div className="text-xs font-semibold text-slate-700">Skills</div>
-                                    <button
-                                        type="button"
-                                        onClick={() => addSkillItem('New Skill')}
-                                        className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white"
-                                    >
-                                        Add Skill
-                                    </button>
-                                </div>
-                                {(Array.isArray(skills) ? skills : []).map((s, i) => (
-                                    <div key={`dock-skill-${i}`} className="grid grid-cols-[1fr_auto] gap-2">
-                                        <input
-                                            type="text"
-                                            value={s || ''}
-                                            onChange={(e) => updateSkillItem(i, e.target.value)}
-                                            placeholder={`Skill ${i + 1}`}
-                                            className="rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => removeSkillItem(i)}
-                                            className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                                        >
-                                            Remove
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="space-y-2 border-t border-slate-200 pt-3">
-                                <div className="flex items-center justify-between">
-                                    <div className="text-xs font-semibold text-slate-700">Work / Projects</div>
-                                    <button
-                                        type="button"
-                                        onClick={addProjectGlobal}
-                                        className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white"
-                                    >
-                                        Add Project
-                                    </button>
-                                </div>
-                                {(Array.isArray(projects) ? projects : []).map((p, i) => (
-                                    <div key={`dock-project-${i}`} className="space-y-1 rounded-md border border-slate-200 p-2">
-                                        <input
-                                            type="text"
-                                            value={p?.title || ''}
-                                            onChange={(e) => commitProject(i, 'title', e.target.value)}
-                                            placeholder="Project title"
-                                            className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
-                                        />
-                                        <input
-                                            type="text"
-                                            value={p?.desc || ''}
-                                            onChange={(e) => commitProject(i, 'desc', e.target.value)}
-                                            placeholder="Project description"
-                                            className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
-                                        />
-                                        <input
-                                            type="text"
-                                            value={p?.tech || ''}
-                                            onChange={(e) => commitProject(i, 'tech', e.target.value)}
-                                            placeholder="Tech/tools"
-                                            className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => removeProjectItem(i)}
-                                            className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                                        >
-                                            Remove Project
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-
-                            <div className="space-y-2 border-t border-slate-200 pt-3">
-                                <div className="flex items-center justify-between">
-                                    <div className="text-xs font-semibold text-slate-700">Work Descriptions</div>
-                                    <button
-                                        type="button"
-                                        onClick={() => addWorkHighlightItem()}
-                                        className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white"
-                                    >
-                                        Add Work Item
-                                    </button>
-                                </div>
-                                {(Array.isArray(portfolio?.meta?.workHighlights) ? portfolio.meta.workHighlights : []).map((item, i) => (
-                                    <div key={`dock-work-highlight-${i}`} className="space-y-1 rounded-md border border-slate-200 p-2">
-                                        <input
-                                            type="text"
-                                            value={item?.title || ''}
-                                            onChange={(e) => updateWorkHighlightItem(i, { title: e.target.value })}
-                                            placeholder="Work title"
-                                            className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
-                                        />
-                                        <textarea
-                                            value={item?.text || ''}
-                                            onChange={(e) => updateWorkHighlightItem(i, { text: e.target.value })}
-                                            placeholder="Work description"
-                                            rows={3}
-                                            className="w-full rounded-md border border-slate-300 px-2 py-1 text-xs text-slate-700"
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => removeWorkHighlightItem(i)}
-                                            className="rounded-md border border-red-300 px-2 py-1 text-xs text-red-600 hover:bg-red-50"
-                                        >
-                                            Remove Work Item
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
             {!suppressTemplateCopies && <TemplateExtraPages />}
             {!hideFooterBadge && (
                 <div className="fixed bottom-4 right-4 bg-black/50 backdrop-blur text-white px-3 py-1 rounded-full text-xs">
@@ -726,60 +609,151 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             </div>
         );
     };
+    const getExtraPageTheme = () => {
+        if (String(templateId || '').startsWith('barch-')) {
+            return {
+                section: 'bg-[#f4efe8] text-slate-900',
+                shell: 'mx-auto max-w-6xl px-6 py-14',
+                card: 'overflow-hidden rounded-[2rem] border border-rose-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.12)]',
+                hero: 'border-b border-rose-100 bg-gradient-to-r from-rose-900 via-rose-700 to-orange-500 px-8 py-10 text-white',
+                content: 'grid gap-8 px-8 py-8 lg:grid-cols-[1.2fr_0.8fr]',
+                title: 'text-3xl md:text-4xl font-black uppercase tracking-[0.16em]',
+                text: 'text-base leading-8 text-slate-700',
+                badge: 'inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white',
+                emptyImage: 'flex min-h-[260px] items-center justify-center rounded-[1.5rem] border border-dashed border-rose-200 bg-rose-50 px-6 text-center text-sm text-rose-500',
+            };
+        }
+        if (templateId === 'btech-cs-unicons') {
+            return {
+                section: 'bg-[#f7f9fc] text-slate-900',
+                shell: 'mx-auto max-w-6xl px-6 py-10',
+                card: 'rounded-[2rem] border border-slate-200 bg-white shadow-sm',
+                hero: 'border-b border-slate-200 px-8 py-8',
+                content: 'grid gap-6 px-8 py-8 lg:grid-cols-[1.1fr_0.9fr]',
+                title: 'text-3xl font-bold',
+                text: 'text-base leading-8 text-slate-600',
+                badge: 'inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-blue-700',
+                emptyImage: 'flex min-h-[240px] items-center justify-center rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50 px-6 text-center text-sm text-slate-500',
+            };
+        }
+        if (String(templateId || '').startsWith('btech-')) {
+            return {
+                section: 'bg-slate-950 text-slate-100',
+                shell: 'mx-auto max-w-6xl px-6 py-12',
+                card: 'overflow-hidden rounded-[2rem] border border-cyan-400/20 bg-slate-900/80 shadow-[0_30px_80px_rgba(8,47,73,0.35)]',
+                hero: 'border-b border-cyan-400/20 bg-gradient-to-r from-slate-900 via-cyan-950 to-blue-950 px-8 py-9',
+                content: 'grid gap-6 px-8 py-8 lg:grid-cols-[1.1fr_0.9fr]',
+                title: 'text-3xl md:text-4xl font-bold text-white',
+                text: 'text-base leading-8 text-slate-300',
+                badge: 'inline-flex items-center rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200',
+                emptyImage: 'flex min-h-[240px] items-center justify-center rounded-[1.5rem] border border-dashed border-cyan-400/25 bg-slate-950/60 px-6 text-center text-sm text-cyan-200/70',
+            };
+        }
+        if (templateId === 'academic') {
+            return {
+                section: 'bg-[#f8fafc] text-slate-900',
+                shell: 'mx-auto max-w-6xl px-6 py-12',
+                card: 'overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm',
+                hero: 'border-b border-slate-200 bg-slate-900 px-8 py-9 text-white',
+                content: 'grid gap-6 px-8 py-8 lg:grid-cols-[1.15fr_0.85fr]',
+                title: 'text-3xl font-bold',
+                text: 'text-base leading-8 text-slate-700',
+                badge: 'inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-200',
+                emptyImage: 'flex min-h-[240px] items-center justify-center rounded-[1.25rem] border border-dashed border-slate-300 bg-slate-50 px-6 text-center text-sm text-slate-500',
+            };
+        }
+        return {
+            section: 'bg-white text-slate-900',
+            shell: 'mx-auto max-w-6xl px-6 py-12',
+            card: 'overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_25px_60px_rgba(15,23,42,0.08)]',
+            hero: 'border-b border-slate-200 bg-gradient-to-r from-slate-900 to-slate-700 px-8 py-9 text-white',
+            content: 'grid gap-6 px-8 py-8 lg:grid-cols-[1.15fr_0.85fr]',
+            title: 'text-3xl font-bold',
+            text: 'text-base leading-8 text-slate-700',
+            badge: 'inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-200',
+            emptyImage: 'flex min-h-[240px] items-center justify-center rounded-[1.25rem] border border-dashed border-slate-300 bg-slate-50 px-6 text-center text-sm text-slate-500',
+        };
+    };
+
     const TemplateExtraPages = () => {
-        if (suppressTemplateCopies || !showSection('extraPages') || !templatePageCopies.length) return null;
+        if (suppressTemplateCopies || !showSection('extraPages') || !templatePages.length) return null;
+
+        const theme = getExtraPageTheme();
+
         return (
             <div>
-                {templatePageCopies.map((pagePortfolio, i) => (
-                    <section key={i} className="border-t border-white/10">
-                        <div className="flex justify-end max-w-6xl mx-auto px-6 py-4">
-                            {isEditable && !exportMode && (
-                                <button
-                                    type="button"
-                                    onClick={() => removeTemplatePageCopy(i)}
-                                    className="text-xs px-2 py-1 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10"
-                                >
-                                    Remove Page {i + 2}
-                                </button>
-                            )}
+                {templatePages.map((page, i) => (
+                    <section key={`template-page-${i}`} className={theme.section} style={pageStyle}>
+                        <div className={theme.shell}>
+                            <div className={theme.card}>
+                                <div className={theme.hero}>
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div className="space-y-3">
+                                            <span className={theme.badge}>Page {i + 2}</span>
+                                            <EditableText
+                                                as="h2"
+                                                className={theme.title}
+                                                value={page?.title}
+                                                placeholder={`Page ${i + 2}`}
+                                                onCommit={(value) => updateTemplatePage(i, { title: value })}
+                                            />
+                                        </div>
+                                        {isEditable && !exportMode && (
+                                            <button
+                                                type="button"
+                                                onClick={() => removeTemplatePage(i)}
+                                                className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-white hover:bg-white/10"
+                                            >
+                                                Remove
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className={theme.content}>
+                                    <div className="space-y-4">
+                                        <EditableText
+                                            as="p"
+                                            className={theme.text}
+                                            value={page?.content}
+                                            placeholder="Write the content for this extra page."
+                                            onCommit={(value) => updateTemplatePage(i, { content: value })}
+                                        />
+                                        {isEditable && !exportMode && (
+                                            <textarea
+                                                value={page?.content || ''}
+                                                onChange={(e) => updateTemplatePage(i, { content: e.target.value })}
+                                                rows={8}
+                                                className="w-full rounded-2xl border border-slate-300 bg-white/90 px-4 py-3 text-sm text-slate-700 outline-none focus:border-blue-500"
+                                            />
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {page?.image ? (
+                                            <img
+                                                src={page.image}
+                                                alt={page?.title || `Page ${i + 2}`}
+                                                className="h-full min-h-[240px] w-full rounded-[1.5rem] object-cover"
+                                            />
+                                        ) : (
+                                            <div className={theme.emptyImage}>
+                                                Add an image URL to place a visual on this page.
+                                            </div>
+                                        )}
+                                        {isEditable && !exportMode && (
+                                            <input
+                                                type="text"
+                                                value={page?.image || ''}
+                                                onChange={(e) => updateTemplatePage(i, { image: e.target.value })}
+                                                placeholder="Image URL"
+                                                className="w-full rounded-2xl border border-slate-300 bg-white/90 px-4 py-3 text-sm text-slate-700 outline-none focus:border-blue-500"
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <PortfolioView
-                            portfolioOverride={{
-                                ...pagePortfolio,
-                                meta: {
-                                    ...(pagePortfolio?.meta || {}),
-                                    sectionVisibility: {
-                                        ...(globalMeta.sectionVisibility || {}),
-                                    },
-                                },
-                            }}
-                            editable={isEditable}
-                            onPortfolioChange={(updater) => {
-                                if (!isEditable) return;
-                                onPortfolioChange((prev) => {
-                                    const copies = Array.isArray(prev?.meta?.templatePageCopies) ? [...prev.meta.templatePageCopies] : [];
-                                    const current = copies[i] || {};
-                                    const next = typeof updater === 'function' ? updater(current) : updater;
-                                    copies[i] = {
-                                        ...next,
-                                        meta: {
-                                            ...(next?.meta || {}),
-                                            templatePageCopies: [],
-                                            templatePages: [],
-                                        },
-                                    };
-                                    return {
-                                        ...prev,
-                                        meta: {
-                                            ...(prev.meta || {}),
-                                            templatePageCopies: copies,
-                                        },
-                                    };
-                                });
-                            }}
-                            hideFooterBadge
-                            suppressTemplateCopies
-                        />
                     </section>
                 ))}
             </div>
@@ -1205,14 +1179,14 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                 { name: 'Project Teammate', text: 'Great collaborator with excellent frontend implementation skills.' },
             ];
         const sectionVisibility = {
-            about: true,
-            skills: true,
-            qualification: true,
-            services: true,
-            portfolio: true,
-            project: true,
-            testimonial: true,
-            contact: true,
+            about: showSection('about'),
+            skills: showSection('skills'),
+            qualification: showSection('qualification'),
+            services: showSection('services'),
+            portfolio: showSection('projects'),
+            project: showSection('projects'),
+            testimonial: showSection('testimonials'),
+            contact: showSection('contact'),
             ...(meta.uniconsSections || {}),
         };
 
@@ -1249,6 +1223,15 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         <section className="skills section bg-white rounded-2xl border border-slate-200 p-8" id="skills">
                             <div className="flex items-center justify-between gap-3 mb-4">
                                 <h2 className="text-2xl font-bold">Skills</h2>
+                                {isEditable && (
+                                    <button
+                                        type="button"
+                                        onClick={() => addSkillItem('New Skill')}
+                                        className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                                    >
+                                        Add Skill
+                                    </button>
+                                )}
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 {(skills || []).map((s, i) => (
@@ -1261,6 +1244,16 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                                             />
                                         ) : (
                                             <span>{s}</span>
+                                        )}
+                                        {isEditable && (
+                                            <button
+                                                type="button"
+                                                onClick={() => removeSkillItem(i)}
+                                                className="rounded-full text-xs font-bold text-blue-600 hover:text-red-600"
+                                                aria-label={`Remove skill ${i + 1}`}
+                                            >
+                                                x
+                                            </button>
                                         )}
                                     </span>
                                 ))}
@@ -1290,12 +1283,30 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         <section className="services section bg-white rounded-2xl border border-slate-200 p-8" id="services">
                             <div className="flex items-center justify-between gap-3 mb-4">
                                 <h2 className="text-2xl font-bold">Services</h2>
+                                {isEditable && (
+                                    <button
+                                        type="button"
+                                        onClick={() => addMetaListItem('uniconsServices', { title: 'New Service', text: 'Describe this service.' })}
+                                        className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                                    >
+                                        Add Service
+                                    </button>
+                                )}
                             </div>
                             <div className="grid md:grid-cols-3 gap-4">
                                 {serviceItems.map((srv, i) => (
                                     <article key={`${srv.title}-${i}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                                         <div className="flex items-start justify-between gap-2">
                                             <EditableText as="h3" className="font-semibold" value={srv.title} placeholder="Service title" onCommit={(v) => updateMetaListItem('uniconsServices', i, { title: v })} />
+                                            {isEditable && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeMetaListItem('uniconsServices', i)}
+                                                    className="rounded-full border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                                                >
+                                                    Remove
+                                                </button>
+                                            )}
                                         </div>
                                         <EditableText as="p" className="text-sm text-slate-600 mt-2" value={srv.text} placeholder="Service description" onCommit={(v) => updateMetaListItem('uniconsServices', i, { text: v })} />
                                     </article>
@@ -1314,6 +1325,15 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                                     <article key={i} className="rounded-xl border border-slate-200 p-5">
                                         <div className="flex items-start justify-between gap-2">
                                             <EditableText as="h3" className="text-xl font-semibold" value={p.title || `Project ${i + 1}`} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                            {isEditable && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeProjectItem(i)}
+                                                    className="rounded-full border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                                                >
+                                                    Remove
+                                                </button>
+                                            )}
                                         </div>
                                         <EditableText as="p" className="text-slate-600 mt-2" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
                                         <ProjectAttachments p={p} />
@@ -1340,12 +1360,30 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         <section className="testimonial section bg-white rounded-2xl border border-slate-200 p-8">
                             <div className="flex items-center justify-between gap-3 mb-4">
                                 <h2 className="text-2xl font-bold">Testimonial</h2>
+                                {isEditable && (
+                                    <button
+                                        type="button"
+                                        onClick={() => addMetaListItem('uniconsTestimonials', { name: 'Name', text: 'Share a testimonial here.' })}
+                                        className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                                    >
+                                        Add Testimonial
+                                    </button>
+                                )}
                             </div>
                             <div className="grid md:grid-cols-2 gap-4">
                                 {testimonials.map((t, i) => (
                                     <blockquote key={`${t.name}-${i}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                                         <div className="flex items-start justify-between gap-2">
                                             <EditableText as="p" className="text-slate-700" value={t.text} placeholder="Testimonial text" onCommit={(v) => updateMetaListItem('uniconsTestimonials', i, { text: v })} />
+                                            {isEditable && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeMetaListItem('uniconsTestimonials', i)}
+                                                    className="rounded-full border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                                                >
+                                                    Remove
+                                                </button>
+                                            )}
                                         </div>
                                         <EditableText as="footer" className="text-sm text-slate-500 mt-2" value={`- ${t.name || 'Name'}`} placeholder="- Name" onCommit={(v) => updateMetaListItem('uniconsTestimonials', i, { name: String(v).replace(/^-+\s*/, '') })} />
                                     </blockquote>

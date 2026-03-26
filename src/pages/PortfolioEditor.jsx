@@ -411,23 +411,46 @@ const PortfolioEditor = () => {
 
     const addTemplatePage = () => {
         setFormData((prev) => {
-            const copies = Array.isArray(prev?.meta?.templatePageCopies) ? prev.meta.templatePageCopies : [];
-            const snapshot = JSON.parse(JSON.stringify({
-                ...prev,
-                meta: {
-                    ...(prev.meta || {}),
-                    templatePageCopies: [],
-                    templatePages: [],
-                },
-            }));
+            const pages = Array.isArray(prev?.meta?.templatePages) ? prev.meta.templatePages : [];
             return {
                 ...prev,
                 meta: {
                     ...(prev.meta || {}),
-                    templatePageCopies: [...copies, snapshot],
+                    templatePages: [
+                        ...pages,
+                        {
+                            title: `New Page ${pages.length + 1}`,
+                            content: 'Add content for this page.',
+                            image: '',
+                        },
+                    ],
                 },
             };
         });
+    };
+
+    const updateTemplatePage = (idx, patch) => {
+        setFormData((prev) => {
+            const pages = Array.isArray(prev?.meta?.templatePages) ? [...prev.meta.templatePages] : [];
+            pages[idx] = { ...(pages[idx] || {}), ...patch };
+            return {
+                ...prev,
+                meta: {
+                    ...(prev.meta || {}),
+                    templatePages: pages,
+                },
+            };
+        });
+    };
+
+    const removeTemplatePage = (idx) => {
+        setFormData((prev) => ({
+            ...prev,
+            meta: {
+                ...(prev.meta || {}),
+                templatePages: (Array.isArray(prev?.meta?.templatePages) ? prev.meta.templatePages : []).filter((_, i) => i !== idx),
+            },
+        }));
     };
 
     const addCertification = () => {
@@ -773,6 +796,45 @@ const PortfolioEditor = () => {
                                             );
                                         })}
                                     </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <h5 className="text-sm text-slate-200">Extra Pages</h5>
+                                        <button type="button" onClick={addTemplatePage} className="text-xs px-2 py-1 bg-blue-600 rounded text-white">Add</button>
+                                    </div>
+                                    {(Array.isArray(formData?.meta?.templatePages) ? formData.meta.templatePages : []).length === 0 && (
+                                        <p className="text-xs text-slate-400">Add a page to generate another page in the same template style.</p>
+                                    )}
+                                    {(Array.isArray(formData?.meta?.templatePages) ? formData.meta.templatePages : []).map((page, i) => (
+                                        <div key={`template-page-${i}`} className="space-y-2 rounded-xl border border-white/10 bg-white/5 p-3">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="text-xs font-medium text-slate-300">Page {i + 2}</span>
+                                                <button type="button" onClick={() => removeTemplatePage(i)} className="text-red-400 hover:text-red-300">
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
+                                            <input
+                                                value={page?.title || ''}
+                                                onChange={(e) => updateTemplatePage(i, { title: e.target.value })}
+                                                placeholder="Page title"
+                                                className="w-full bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                            />
+                                            <textarea
+                                                value={page?.content || ''}
+                                                onChange={(e) => updateTemplatePage(i, { content: e.target.value })}
+                                                placeholder="Page content"
+                                                rows={4}
+                                                className="w-full bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                            />
+                                            <input
+                                                value={page?.image || ''}
+                                                onChange={(e) => updateTemplatePage(i, { image: e.target.value })}
+                                                placeholder="Optional image URL"
+                                                className="w-full bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
+                                            />
+                                        </div>
+                                    ))}
                                 </div>
 
                                 <div className="space-y-2">
