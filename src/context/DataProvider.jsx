@@ -53,13 +53,97 @@ const INITIAL_TEMPLATES = [
     { id: 'barch-portfolio-b', name: 'BArch Slate Journal', description: 'Dark studio portfolio with timeline and project cards', group: 'barch' }
 ];
 
+const TEMPLATE_STORAGE_KEY = 'dps_template_configs_v1';
+const DEFAULT_TEMPLATE_SECTIONS = {
+    about: true,
+    skills: true,
+    projects: true,
+    certifications: true,
+    services: true,
+    qualification: true,
+    testimonials: true,
+    contact: true,
+    extraPages: true,
+};
+
+const normalizeTemplateConfig = (template) => {
+    if (!template || typeof template !== 'object') return null;
+
+    const id = String(template.id || '').trim();
+    if (!id) return null;
+
+    return {
+        id,
+        name: String(template.name || 'Untitled Template').trim(),
+        description: String(template.description || '').trim(),
+        group: String(template.group || 'general').trim() || 'general',
+        branch: template.branch ? String(template.branch).trim() : undefined,
+        renderer: String(template.renderer || 'built-in').trim() || 'built-in',
+        sections: Array.isArray(template.sections)
+            ? template.sections.map((section) => String(section || '').trim()).filter(Boolean)
+            : [],
+        theme: template.theme && typeof template.theme === 'object'
+            ? {
+                heroBg: String(template.theme.heroBg || '#0f172a').trim() || '#0f172a',
+                accent: String(template.theme.accent || '#2563eb').trim() || '#2563eb',
+                surface: String(template.theme.surface || '#ffffff').trim() || '#ffffff',
+                canvas: String(template.theme.canvas || '#f8fafc').trim() || '#f8fafc',
+                text: String(template.theme.text || '#0f172a').trim() || '#0f172a',
+                muted: String(template.theme.muted || '#475569').trim() || '#475569',
+            }
+            : undefined,
+        defaultSectionVisibility: {
+            ...DEFAULT_TEMPLATE_SECTIONS,
+            ...(template.defaultSectionVisibility && typeof template.defaultSectionVisibility === 'object'
+                ? template.defaultSectionVisibility
+                : {}),
+        },
+    };
+};
+
 export const DataProvider = ({ children }) => {
     const [portfolios, setPortfolios] = useState({});
     const [reviews, setReviews] = useState([]);
     const [loading, setLoading] = useState(true);
     const [opportunities, setOpportunities] = useState(INITIAL_OPPORTUNITIES);
-    const [templates, setTemplates] = useState(INITIAL_TEMPLATES);
+    const [templateConfigs, setTemplateConfigs] = useState(() => {
+        try {
+            const stored = localStorage.getItem(TEMPLATE_STORAGE_KEY);
+            if (!stored) return [];
+            const parsed = JSON.parse(stored);
+            return Array.isArray(parsed) ? parsed.map(normalizeTemplateConfig).filter(Boolean) : [];
+        } catch (error) {
+            console.error('Failed to load template configs from localStorage:', error);
+            return [];
+        }
+    });
     const [users, setUsers] = useState([]); // Mock user registry for Admin
+
+    const templates = React.useMemo(() => {
+        const merged = new Map(INITIAL_TEMPLATES.map((template) => [template.id, {
+            ...template,
+            renderer: 'built-in',
+            defaultSectionVisibility: { ...DEFAULT_TEMPLATE_SECTIONS },
+        }]));
+
+        templateConfigs.forEach((template) => {
+            const prev = merged.get(template.id) || {};
+            merged.set(template.id, {
+                ...prev,
+                ...template,
+            });
+        });
+
+        return Array.from(merged.values());
+    }, [templateConfigs]);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(TEMPLATE_STORAGE_KEY, JSON.stringify(templateConfigs));
+        } catch (error) {
+            console.error('Failed to persist template configs:', error);
+        }
+    }, [templateConfigs]);
 
     const loadOpportunities = useCallback(async () => {
         try {
@@ -463,6 +547,27 @@ export const DataProvider = ({ children }) => {
 
     const getAllPortfolios = () => Object.entries(portfolios).map(([id, data]) => ({ studentId: id, ...data }));
 
+    const getTemplateById = (templateId) => templates.find((template) => template.id === templateId) || null;
+
+    const saveTemplateConfig = async (template) => {
+        const normalized = normalizeTemplateConfig(template);
+        if (!normalized) throw new Error('Template id is required.');
+
+        setTemplateConfigs((prev) => {
+            const next = prev.filter((item) => item.id !== normalized.id);
+            next.push(normalized);
+            return next.sort((a, b) => a.name.localeCompare(b.name));
+        });
+
+        return normalized;
+    };
+
+    const deleteTemplateConfig = async (templateId) => {
+        const target = String(templateId || '').trim();
+        if (!target) return;
+        setTemplateConfigs((prev) => prev.filter((item) => item.id !== target));
+    };
+
     const getPortfolioCompletion = (portfolio) => {
         if (!portfolio) {
             return {
@@ -545,12 +650,15 @@ export const DataProvider = ({ children }) => {
             templates,
             users,
             savePortfolio,
+            saveTemplateConfig,
+            deleteTemplateConfig,
             createOpportunity,
             refreshPortfolios: loadPortfolios,
             refreshOpportunities: loadOpportunities,
             addReview,
             getStudentPortfolio,
             getAllPortfolios,
+            getTemplateById,
             getPortfolioCompletion,
             analyzePortfolio // Exposed for UC2
         }}>
