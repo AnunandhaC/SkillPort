@@ -44,7 +44,6 @@ export const DEFAULT_TEMPLATE_SECTIONS = [
     { key: 'services', label: 'Services', enabled: true },
     { key: 'testimonials', label: 'Testimonials', enabled: true },
     { key: 'contact', label: 'Contact', enabled: true },
-    { key: 'extraPages', label: 'Extra Pages', enabled: true },
     { key: 'portfolio', label: 'Portfolio', enabled: true },
     { key: 'project', label: 'Project In Mind', enabled: true },
     { key: 'testimonial', label: 'Testimonial', enabled: true },

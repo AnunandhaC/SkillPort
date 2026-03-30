@@ -281,8 +281,16 @@ const PortfolioEditor = () => {
             const copies = Array.isArray(prev?.meta?.templatePageCopies) ? prev.meta.templatePageCopies : [];
             const snapshot = JSON.parse(JSON.stringify({
                 ...prev,
+                about: '',
                 meta: {
                     ...(prev.meta || {}),
+                    fullName: '',
+                    role: '',
+                    sectionVisibility: {
+                        ...(prev?.meta?.sectionVisibility || {}),
+                        about: false,
+                    },
+                    hideIntroOnTemplatePage: true,
                     templatePageCopies: [],
                     templatePages: [],
                 },

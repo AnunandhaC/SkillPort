@@ -56,7 +56,7 @@ const Login = () => {
   }, [user, loading, navigate]);
 
   useEffect(() => {
-    const msg = location?.state?.message;
+    const msg = location?.state?.message || location?.state?.successMessage;
     if (msg) {
       setSuccess(String(msg));
       navigate(location.pathname, { replace: true, state: {} });

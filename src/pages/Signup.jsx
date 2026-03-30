@@ -5,7 +5,7 @@ import { User, Mail, Lock, GraduationCap, Building2 } from 'lucide-react';
 import clsx from 'clsx';
 
 const Signup = () => {
-    const { signupStudent, login } = useAuth();
+    const { signupStudent, logout } = useAuth();
     const navigate = useNavigate();
     const [program, setProgram] = useState(''); // 'barch' | 'btech'
     const [email, setEmail] = useState('');
@@ -21,8 +21,11 @@ const Signup = () => {
         setError('');
         setSuccess('');
         setSubmitting(true);
+        const trimmedEmail = email.trim();
+        const trimmedName = name.trim();
 
-        if (!email || !name || !program) {
+        if (!trimmedEmail || !trimmedName || !program) {
+            setError('Program, full name, and email are required.');
             setSubmitting(false);
             return;
         }
@@ -39,22 +42,16 @@ const Signup = () => {
         }
 
         try {
-            const signupData = await signupStudent({ email, password, name, program });
-
-            if (signupData?.session) {
-                navigate('/student-dashboard', { replace: true });
-                return;
-            }
-
-            try {
-                await login(email.trim(), password);
-                navigate('/student-dashboard', { replace: true });
-            } catch {
-                navigate('/', {
-                    replace: true,
-                    state: { message: 'Account created successfully. Please sign in.' },
-                });
-            }
+            await signupStudent({ email: trimmedEmail, password, name: trimmedName, program });
+            await logout();
+            setSuccess('Account created successfully. Please sign in.');
+            navigate('/', {
+                replace: true,
+                state: {
+                    message: 'Account created successfully. Please sign in.',
+                    successMessage: 'Account created successfully. Please sign in.',
+                },
+            });
         } catch (signupError) {
             setError(signupError.message || 'Failed to create account.');
         } finally {

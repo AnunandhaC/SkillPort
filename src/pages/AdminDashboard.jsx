@@ -124,8 +124,16 @@ const AdminDashboard = () => {
             themeColor: template.themeColor || '#2563eb',
             backgroundColor: template.backgroundColor || '#ffffff',
             sections: Array.isArray(template.sections) && template.sections.length > 0
-                ? template.sections
-                : DEFAULT_TEMPLATE_SECTIONS,
+                ? template.sections.map((section) => ({
+                    key: String(section?.key || ''),
+                    label: String(section?.label || ''),
+                    enabled: section?.enabled !== false,
+                }))
+                : DEFAULT_TEMPLATE_SECTIONS.map((section) => ({
+                    key: String(section?.key || ''),
+                    label: String(section?.label || ''),
+                    enabled: section?.enabled !== false,
+                })),
         });
     };
 
@@ -648,7 +656,7 @@ const AdminDashboard = () => {
                             <input
                                 type="text"
                                 value={templateForm.name}
-                                onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })}
+                                onChange={(e) => setTemplateForm((prev) => ({ ...prev, name: e.target.value }))}
                                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
@@ -658,7 +666,7 @@ const AdminDashboard = () => {
                             <textarea
                                 rows={4}
                                 value={templateForm.description}
-                                onChange={(e) => setTemplateForm({ ...templateForm, description: e.target.value })}
+                                onChange={(e) => setTemplateForm((prev) => ({ ...prev, description: e.target.value }))}
                                 className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
                             />
                         </div>
@@ -668,7 +676,7 @@ const AdminDashboard = () => {
                                 <label className="block text-sm text-slate-400 mb-1">Base Template Layout</label>
                                 <select
                                     value={templateForm.baseTemplateId}
-                                    onChange={(e) => setTemplateForm({ ...templateForm, baseTemplateId: e.target.value })}
+                                    onChange={(e) => setTemplateForm((prev) => ({ ...prev, baseTemplateId: e.target.value }))}
                                     className="w-full bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2.5 text-white outline-none focus:ring-2 focus:ring-blue-500"
                                 >
                                     {PREVIEWABLE_BASE_TEMPLATES.map((template) => (
@@ -681,7 +689,7 @@ const AdminDashboard = () => {
                                 <input
                                     type="color"
                                     value={templateForm.themeColor}
-                                    onChange={(e) => setTemplateForm({ ...templateForm, themeColor: e.target.value })}
+                                    onChange={(e) => setTemplateForm((prev) => ({ ...prev, themeColor: e.target.value }))}
                                     className="h-[42px] w-full bg-slate-900/50 border border-slate-700 rounded-lg px-2 py-1 text-white outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                             </div>
@@ -690,7 +698,7 @@ const AdminDashboard = () => {
                                 <input
                                     type="color"
                                     value={templateForm.backgroundColor}
-                                    onChange={(e) => setTemplateForm({ ...templateForm, backgroundColor: e.target.value })}
+                                    onChange={(e) => setTemplateForm((prev) => ({ ...prev, backgroundColor: e.target.value }))}
                                     className="h-[42px] w-full bg-slate-900/50 border border-slate-700 rounded-lg px-2 py-1 text-white outline-none focus:ring-2 focus:ring-blue-500"
                                 />
                             </div>
