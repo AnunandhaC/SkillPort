@@ -3,7 +3,7 @@ import { useLocation, useParams } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
 import { Github, Linkedin, Mail, Menu, X, ChevronUp } from 'lucide-react';
 
-const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolioChange = null, hideFooterBadge = false, suppressTemplateCopies = false, exportMode = false }) => {
+const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolioChange = null, hideFooterBadge = false, suppressTemplateCopies = false, exportMode = false, editorScopeId = '' }) => {
     const { id } = useParams();
     const location = useLocation();
     const { getStudentPortfolio, getTemplateById, loading } = useData();
@@ -103,6 +103,13 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             return false;
         }
     })();
+    const isDownloadMode = (() => {
+        try {
+            return new URLSearchParams(location.search).get('download') === '1';
+        } catch {
+            return false;
+        }
+    })();
 
     if (isPreviewMode && id) {
         try {
@@ -115,6 +122,13 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         ...parsed,
                         studentId: id,
                     }, id);
+                }
+            }
+            const configRaw = localStorage.getItem(`dps_preview_template_config_${id}`);
+            if (configRaw) {
+                const parsedConfig = JSON.parse(configRaw);
+                if (parsedConfig && typeof parsedConfig === 'object') {
+                    previewTemplateConfig = parsedConfig;
                 }
             }
         } catch (e) {
@@ -145,12 +159,47 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         services: true,
         qualification: true,
         testimonials: true,
+        testimonial: true,
         contact: true,
         extraPages: true,
         ...(templateConfig?.defaultSectionVisibility || {}),
         ...(globalMeta.sectionVisibility || {}),
     };
     const showSection = (key) => sectionVisibility[key] !== false;
+    const builtInSectionKeys = new Set([
+        'about',
+        'skills',
+        'projects',
+        'certifications',
+        'services',
+        'qualification',
+        'testimonials',
+        'testimonial',
+        'contact',
+        'extraPages',
+        'portfolio',
+        'project',
+    ]);
+    const customSectionLabels = globalMeta?.customSectionLabels || {};
+    const templateCustomSections = (Array.isArray(currentTemplate?.sections) ? currentTemplate.sections : [])
+        .filter((section) => section?.key && !builtInSectionKeys.has(section.key))
+        .map((section) => ({
+            key: String(section.key),
+            label: String(customSectionLabels?.[String(section.key)] || section.label || section.key),
+        }));
+    const metaCustomSections = Object.keys(globalMeta?.customSections || {})
+        .filter((key) => key && !builtInSectionKeys.has(key))
+        .map((key) => ({
+            key,
+            label: String(customSectionLabels?.[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())),
+        }));
+    const customTemplateSections = [...templateCustomSections, ...metaCustomSections]
+        .reduce((acc, section) => {
+            if (acc.some((s) => s.key === section.key)) return acc;
+            acc.push(section);
+            return acc;
+        }, [])
+        .filter((section) => showSection(section.key));
     const templateStyle = portfolio?.meta?.templateStyle || {};
     const templatePages = Array.isArray(portfolio?.meta?.templatePages) ? portfolio.meta.templatePages : [];
     const fontFamilyMap = {
@@ -175,6 +224,10 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             showSection('services') ? '' : '.services.section{display:none !important;}',
             showSection('testimonials') ? '' : '.testimonial.section{display:none !important;}',
             showSection('contact') ? '' : '#contact,.contact.section{display:none !important;}',
+            'footer,.footer{display:none !important;}',
+            '.dps-extra-page header:first-of-type{display:none !important;}',
+            '.dps-extra-page #home{display:none !important;}',
+            '.dps-extra-page section:first-of-type{display:none !important;}',
         ].join('\n');
 
         const id = 'dps-section-visibility-style';
@@ -187,7 +240,8 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         styleEl.textContent = css;
 
         // Fallback: hide sections by heading keywords for templates without semantic ids/classes.
-        const sections = Array.from(document.querySelectorAll('section'));
+        const scope = (editorScopeId && document.getElementById(editorScopeId)) || document;
+        const sections = Array.from(scope.querySelectorAll('section'));
         sections.forEach((sec) => {
             if (sec.dataset.dpsHiddenByFilter === '1') {
                 sec.style.display = '';
@@ -233,6 +287,16 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         if (!showSection('contact')) {
             hideWhere((sec) => /(contact|reach me)/.test(headingText(sec)));
         }
+        const customHiddenKeys = Object.entries(sectionVisibility)
+            .filter(([key, visible]) =>
+                visible === false
+                && !['about', 'skills', 'projects', 'certifications', 'qualification', 'services', 'testimonials', 'testimonial', 'contact'].includes(key)
+            )
+            .map(([key]) => key);
+        customHiddenKeys.forEach((key) => {
+            const keyRegex = new RegExp(`\\b${key.replace(/_/g, '[\\s_-]*')}\\b`, 'i');
+            hideWhere((sec) => keyRegex.test(headingText(sec)));
+        });
 
         return () => {
             const existing = document.getElementById(id);
@@ -253,8 +317,89 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         sectionVisibility.services,
         sectionVisibility.qualification,
         sectionVisibility.testimonials,
+        sectionVisibility.testimonial,
         sectionVisibility.contact,
+        sectionVisibility.portfolio,
+        sectionVisibility.project,
+        sectionVisibility.extraPages,
+        editorScopeId,
     ]);
+
+    useEffect(() => {
+        const id = 'dps-template-accent-style';
+        let styleEl = document.getElementById(id);
+        if (!styleEl) {
+            styleEl = document.createElement('style');
+            styleEl.id = id;
+            document.head.appendChild(styleEl);
+        }
+        styleEl.textContent = `
+            .text-blue-700,.text-blue-600,.text-blue-500,.text-blue-400,.text-blue-300,.text-cyan-300 {
+                color: ${accentColor} !important;
+            }
+            .text-\\[\\#7372dd\\],.text-\\[\\#6261d2\\],.text-\\[\\#0077b5\\] {
+                color: ${accentColor} !important;
+            }
+            .bg-blue-600,.bg-blue-500,.bg-indigo-600,.bg-cyan-600 {
+                background-color: ${accentColor} !important;
+            }
+            .bg-\\[\\#7372dd\\],.bg-\\[\\#6261d2\\],.bg-\\[\\#0077b5\\] {
+                background-color: ${accentColor} !important;
+            }
+            .from-\\[\\#7372dd\\],.to-\\[\\#7372dd\\],.from-\\[\\#6261d2\\],.to-\\[\\#6261d2\\] {
+                --tw-gradient-from: ${accentColor} var(--tw-gradient-from-position) !important;
+                --tw-gradient-to: ${accentColor} var(--tw-gradient-to-position) !important;
+            }
+            .border-blue-600,.border-blue-500,.border-blue-400,.border-blue-300 {
+                border-color: ${accentColor} !important;
+            }
+            .border-\\[\\#7372dd\\],.border-\\[\\#6261d2\\],.border-\\[\\#0077b5\\] {
+                border-color: ${accentColor} !important;
+            }
+            a:hover {
+                color: ${accentColor} !important;
+            }
+        `;
+        return () => {
+            const existing = document.getElementById(id);
+            if (existing) existing.remove();
+        };
+    }, [accentColor]);
+
+    useEffect(() => {
+        const isHexColor = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(backgroundColor);
+        if (!isHexColor) return undefined;
+
+        const scope = (editorScopeId && document.getElementById(editorScopeId)) || document;
+        const roots = Array.from(scope.querySelectorAll('.min-h-screen'));
+        const touched = [];
+
+        roots.forEach((root) => {
+            const el = root;
+            touched.push({ el, prev: el.style.backgroundColor });
+            el.style.backgroundColor = backgroundColor;
+        });
+
+        return () => {
+            touched.forEach(({ el, prev }) => {
+                el.style.backgroundColor = prev || '';
+            });
+        };
+    }, [backgroundColor, templateId, isEditable, editorScopeId]);
+
+    useEffect(() => {
+        if (!isDownloadMode) return undefined;
+        const timer = window.setTimeout(() => {
+            window.print();
+        }, 500);
+        const closeTimer = window.setTimeout(() => {
+            window.close();
+        }, 1200);
+        return () => {
+            window.clearTimeout(timer);
+            window.clearTimeout(closeTimer);
+        };
+    }, [isDownloadMode]);
 
     const commitRoot = (key, value) => {
         if (!isEditable) return;
@@ -264,6 +409,20 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
     const commitMeta = (key, value) => {
         if (!isEditable) return;
         onPortfolioChange((prev) => ({ ...prev, meta: { ...(prev.meta || {}), [key]: value } }));
+    };
+
+    const setSectionVisibilityInline = (key, visible) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            meta: {
+                ...(prev.meta || {}),
+                sectionVisibility: {
+                    ...(prev?.meta?.sectionVisibility || {}),
+                    [key]: visible,
+                },
+            },
+        }));
     };
 
     const commitProject = (index, key, value) => {
@@ -507,11 +666,90 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
     // Tiny "Made with" banner
     const Footer = () => (
         <>
+            {customTemplateSections.length > 0 && (
+                <section className="mx-auto mt-10 max-w-6xl space-y-4 px-6">
+                    {customTemplateSections.map((section) => {
+                        const sectionKey = String(section.key);
+                        const sectionLabel = String(section.label || sectionKey).trim() || sectionKey;
+                        const content = String(globalMeta?.customSections?.[sectionKey] || '');
+                        return (
+                            <article
+                                key={sectionKey}
+                                id={sectionKey}
+                                className="rounded-2xl border border-slate-300 bg-white p-6 text-slate-800 shadow-sm"
+                            >
+                                <EditableText
+                                    as="h3"
+                                    className="text-xl font-semibold"
+                                    value={sectionLabel}
+                                    placeholder="Section Title"
+                                    onCommit={(value) => {
+                                        if (!isEditable) return;
+                                        onPortfolioChange((prev) => ({
+                                            ...prev,
+                                            meta: {
+                                                ...(prev.meta || {}),
+                                                customSectionLabels: {
+                                                    ...(prev?.meta?.customSectionLabels || {}),
+                                                    [sectionKey]: String(value || '').trim() || sectionLabel,
+                                                },
+                                            },
+                                        }));
+                                    }}
+                                />
+                                <EditableText
+                                    as="p"
+                                    className="mt-3 text-sm text-slate-700"
+                                    value={content}
+                                    placeholder={`Add ${sectionLabel} content`}
+                                    onCommit={(value) => {
+                                        if (!isEditable) return;
+                                        onPortfolioChange((prev) => ({
+                                            ...prev,
+                                            meta: {
+                                                ...(prev.meta || {}),
+                                                customSections: {
+                                                    ...(prev?.meta?.customSections || {}),
+                                                    [sectionKey]: value,
+                                                },
+                                            },
+                                        }));
+                                    }}
+                                />
+                                {isEditable && (
+                                    <button
+                                        type="button"
+                                        data-dps-no-inline-edit="1"
+                                        className="mt-3 text-xs text-red-600 hover:text-red-500"
+                                        onClick={() => {
+                                            onPortfolioChange((prev) => {
+                                                const nextCustom = { ...(prev?.meta?.customSections || {}) };
+                                                delete nextCustom[sectionKey];
+                                                return {
+                                                    ...prev,
+                                                    meta: {
+                                                        ...(prev.meta || {}),
+                                                        customSections: nextCustom,
+                                                        sectionVisibility: {
+                                                            ...(prev?.meta?.sectionVisibility || {}),
+                                                            [sectionKey]: false,
+                                                        },
+                                                    },
+                                                };
+                                            });
+                                        }}
+                                    >
+                                        Remove Section
+                                    </button>
+                                )}
+                            </article>
+                        );
+                    })}
+                </section>
+            )}
             {!suppressTemplateCopies && <TemplateExtraPages />}
             {!hideFooterBadge && (
-                <div className="fixed bottom-4 right-4 bg-black/50 backdrop-blur text-white px-3 py-1 rounded-full text-xs">
-                    Built with Digital Portfolio System
-                </div>
+                null
             )}
         </>
     );
@@ -538,7 +776,8 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         };
 
         const injected = [];
-        const sections = Array.from(document.querySelectorAll('section'));
+        const scope = (editorScopeId && document.getElementById(editorScopeId)) || document;
+        const sections = Array.from(scope.querySelectorAll('section'));
         sections.forEach((section) => {
             const heading = section.querySelector('h1,h2,h3,h4,h5,h6');
             if (!heading) return;
@@ -1151,7 +1390,8 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                             </div>
                         ))}
                     </div>
-                </section>
+                </section>
+
                 <Footer />
             </div>
         );

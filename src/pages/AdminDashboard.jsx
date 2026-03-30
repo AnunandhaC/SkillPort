@@ -22,6 +22,30 @@ const AdminDashboard = () => {
         requiredSkills: '',
         description: '',
     });
+    const [editingTemplateId, setEditingTemplateId] = useState(null);
+    const [templateForm, setTemplateForm] = useState({
+        name: '',
+        description: '',
+        baseTemplateId: 'modern',
+        themeColor: '#2563eb',
+        backgroundColor: '#ffffff',
+        sections: [],
+    });
+    const [newSection, setNewSection] = useState({ key: '', label: '' });
+    const [isCreatingTemplate, setIsCreatingTemplate] = useState(false);
+    const [createTemplateForm, setCreateTemplateForm] = useState({
+        name: '',
+        description: '',
+        group: 'general',
+        branch: '',
+        previewTemplateId: 'modern',
+        themeColor: '#2563eb',
+        backgroundColor: '#ffffff',
+        sections: DEFAULT_TEMPLATE_SECTIONS,
+    });
+    const [newCreateSection, setNewCreateSection] = useState({ key: '', label: '' });
+    const [templateError, setTemplateError] = useState('');
+    const [templateSuccess, setTemplateSuccess] = useState('');
 
     const loadUsers = async () => {
         setLoadingUsers(true);

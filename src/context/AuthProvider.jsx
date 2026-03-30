@@ -13,6 +13,40 @@ export const AuthProvider = ({ children }) => {
     if (v === 'btech' || v === 'b.tech' || v === 'b tech') return 'btech';
     return null;
   };
+  const resolveProfileUser = async (authUser, fallbackRole = 'student') => {
+    if (!authUser) return null;
+
+    const metadata = authUser.user_metadata || {};
+    const fallback = {
+      id: authUser.id,
+      email: authUser.email,
+      role: metadata.role || fallbackRole,
+      name: metadata.full_name || authUser.email?.split('@')[0] || 'User',
+      program: normalizeProgram(metadata.program),
+    };
+
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', authUser.id)
+        .maybeSingle();
+      if (error) throw error;
+
+      if (!profile) return fallback;
+
+      return {
+        id: profile.id,
+        email: profile.email || fallback.email,
+        role: profile.role || fallback.role,
+        name: profile.full_name || fallback.name,
+        program: normalizeProgram(profile.program) || fallback.program,
+      };
+    } catch (error) {
+      console.error('resolveProfileUser failed; using fallback.', error);
+      return fallback;
+    }
+  };
 
   const syncUserFromSession = useCallback(async (authUser, options = {}) => {
       const {
@@ -135,42 +169,52 @@ export const AuthProvider = ({ children }) => {
 
   // SIGNUP (students only)
   const signupStudent = async ({ email, password, name, program }) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: name,
-          role: 'student',
-          program,
-        },
-      },
-    });
-
-    if (error) throw error;
-
-    // Ensure a row exists in profiles (required: profiles table + RLS - run supabase/migrations/001_profiles.sql)
-    const userId = data.user?.id;
-    if (userId) {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .upsert(
-          {
-            id: userId,
-            email,
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
             full_name: name,
             role: 'student',
-            program: program || null,
+            program,
           },
-          { onConflict: 'id' }
-        );
-      if (profileError) {
-        console.error('Profile save failed (check profiles table + RLS):', profileError);
-        throw new Error(profileError.message || 'Account created but profile could not be saved. Please contact support.');
-      }
-    }
+        },
+      });
 
-    return data;
+      if (error) throw error;
+
+      // Ensure a row exists in profiles (required: profiles table + RLS - run supabase/migrations/001_profiles.sql)
+      const userId = data.user?.id;
+      if (userId) {
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert(
+            {
+              id: userId,
+              email,
+              full_name: name,
+              role: 'student',
+              program: program || null,
+            },
+            { onConflict: 'id' }
+          );
+        if (profileError) {
+          console.error('Profile save failed (check profiles table + RLS):', profileError);
+          throw new Error(profileError.message || 'Account created but profile could not be saved. Please contact support.');
+        }
+      }
+
+      if (data?.session && data?.user) {
+        const resolvedUser = await resolveProfileUser(data.user, 'student');
+        if (resolvedUser) setUser(resolvedUser);
+      }
+
+      return data;
+    } finally {
+      setLoading(false);
+    }
   };
 
   // FORGOT PASSWORD

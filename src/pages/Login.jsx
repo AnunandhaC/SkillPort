@@ -39,11 +39,15 @@ const Login = () => {
       } else {
         setError(msg);
       }
+    } finally {
+      setSubmitting(false);
     }
   };
 
   useEffect(() => {
-    if (!user) return;
+    if (loading || !user) return;
+    navigateToRole(user.role);
+  }, [user, loading, navigate]);
 
     if (pendingRole && user.role !== pendingRole) {
       logout().catch((logoutError) => {

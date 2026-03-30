@@ -36,6 +36,67 @@ const INITIAL_OPPORTUNITIES = [
     }
 ];
 
+export const DEFAULT_TEMPLATE_SECTIONS = [
+    { key: 'about', label: 'About', enabled: true },
+    { key: 'skills', label: 'Skills', enabled: true },
+    { key: 'projects', label: 'Projects', enabled: true },
+    { key: 'certifications', label: 'Certifications', enabled: true },
+    { key: 'qualification', label: 'Qualification', enabled: true },
+    { key: 'services', label: 'Services', enabled: true },
+    { key: 'testimonials', label: 'Testimonials', enabled: true },
+    { key: 'contact', label: 'Contact', enabled: true },
+    { key: 'extraPages', label: 'Extra Pages', enabled: true },
+    { key: 'portfolio', label: 'Portfolio', enabled: true },
+    { key: 'project', label: 'Project In Mind', enabled: true },
+    { key: 'testimonial', label: 'Testimonial', enabled: true },
+];
+
+const normalizeSectionKey = (value) =>
+    String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+const normalizeTemplateSections = (sections) => {
+    if (!Array.isArray(sections) || sections.length === 0) {
+        return DEFAULT_TEMPLATE_SECTIONS.map((section) => ({ ...section }));
+    }
+
+    const seen = new Set();
+    const normalized = [];
+
+    sections.forEach((raw) => {
+        const key = normalizeSectionKey(raw?.key);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+
+        const label = String(raw?.label || '')
+            .trim()
+            || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+        normalized.push({
+            key,
+            label,
+            enabled: raw?.enabled !== false,
+        });
+    });
+
+    if (normalized.length === 0) {
+        return DEFAULT_TEMPLATE_SECTIONS.map((section) => ({ ...section }));
+    }
+
+    return normalized;
+};
+
+const normalizeTemplate = (template) => ({
+    ...template,
+    baseTemplateId: String(template?.baseTemplateId || template?.id || 'modern').trim() || 'modern',
+    themeColor: String(template?.themeColor || '#2563eb').trim() || '#2563eb',
+    backgroundColor: String(template?.backgroundColor || '').trim(),
+    sections: normalizeTemplateSections(template?.sections),
+});
+
 const INITIAL_TEMPLATES = [
     { id: 'modern', name: 'Modern Minimal', description: 'Clean and whitespace heavy', group: 'general' },
     { id: 'academic', name: 'Academic Professional', description: 'Structured and detailed', group: 'general' },
@@ -51,7 +112,7 @@ const INITIAL_TEMPLATES = [
     { id: 'barch-red', name: 'BArch Red Studio', description: 'Red and white modern architecture portfolio', group: 'barch' },
     { id: 'barch-portfolio-a', name: 'BArch Portfolio Book', description: 'Editorial portfolio style with large project boards', group: 'barch' },
     { id: 'barch-portfolio-b', name: 'BArch Slate Journal', description: 'Dark studio portfolio with timeline and project cards', group: 'barch' }
-];
+].map(normalizeTemplate);
 
 const TEMPLATE_STORAGE_KEY = 'dps_template_configs_v1';
 const DEFAULT_TEMPLATE_SECTIONS = {
@@ -305,6 +366,10 @@ export const DataProvider = ({ children }) => {
             clearInterval(pollId);
         };
     }, [loadOpportunities, loadPortfolios]);
+
+    useEffect(() => {
+        localStorage.setItem('dps_templates', JSON.stringify(templates));
+    }, [templates]);
 
     const savePortfolio = async (studentId, data) => {
         if (!studentId) throw new Error('Missing student id.');
@@ -656,6 +721,9 @@ export const DataProvider = ({ children }) => {
             refreshPortfolios: loadPortfolios,
             refreshOpportunities: loadOpportunities,
             addReview,
+            createTemplate,
+            updateTemplate,
+            removeTemplate,
             getStudentPortfolio,
             getAllPortfolios,
             getTemplateById,

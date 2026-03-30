@@ -268,11 +268,6 @@ const PortfolioEditor = () => {
     };
 
     const handleDownloadTemplate = async () => {
-        if (!livePreviewRef.current) {
-            alert('Open Live Editor first.');
-            return;
-        }
-
         try {
             const activeEl = document.activeElement;
             if (
@@ -335,13 +330,28 @@ const PortfolioEditor = () => {
                 heightLeft -= pageHeight;
             }
 
-            const safeName = String(formData?.meta?.fullName || user?.name || 'portfolio')
-                .trim()
-                .replace(/[^\w-]+/g, '-')
-                .replace(/-+/g, '-')
-                .replace(/^-|-$/g, '')
-                || 'portfolio';
-            pdf.save(`${safeName}-${formData.templateId || 'template'}.pdf`);
+            const printUrl = `${window.location.origin}/portfolio/view/${user.id}?preview=1&download=1&t=${Date.now()}`;
+            const iframe = document.createElement('iframe');
+            iframe.style.position = 'fixed';
+            iframe.style.width = '0';
+            iframe.style.height = '0';
+            iframe.style.border = '0';
+            iframe.style.right = '0';
+            iframe.style.bottom = '0';
+            iframe.src = printUrl;
+            document.body.appendChild(iframe);
+            const cleanup = () => {
+                try {
+                    iframe.remove();
+                } catch {
+                    // ignore
+                }
+            };
+            iframe.onload = () => {
+                setTimeout(() => {
+                    cleanup();
+                }, 20000);
+            };
         } catch (error) {
             console.error('Failed to download template PDF:', error);
             alert('Failed to download PDF. Please try again.');
@@ -510,6 +520,31 @@ const PortfolioEditor = () => {
 
     const selectedTemplate = visibleTemplates.find((t) => t.id === formData.templateId)
         || templates.find((t) => t.id === formData.templateId);
+    const sectionToggleOptions = (() => {
+        const base = [
+            { key: 'about', label: 'About' },
+            { key: 'skills', label: 'Skills' },
+            { key: 'projects', label: 'Projects' },
+            { key: 'certifications', label: 'Certifications' },
+            { key: 'services', label: 'Services' },
+            { key: 'qualification', label: 'Qualification' },
+            { key: 'testimonials', label: 'Testimonials' },
+            { key: 'contact', label: 'Contact' },
+            { key: 'extraPages', label: 'Extra Pages' },
+        ];
+        const fromTemplate = (Array.isArray(selectedTemplate?.sections) ? selectedTemplate.sections : [])
+            .map((section) => ({
+                key: String(section?.key || ''),
+                label: String(section?.label || section?.key || ''),
+            }))
+            .filter((section) => section.key);
+        const byKey = new Map();
+        [...base, ...fromTemplate].forEach((section) => {
+            if (!section.key || byKey.has(section.key)) return;
+            byKey.set(section.key, section);
+        });
+        return Array.from(byKey.values());
+    })();
 
     const editorShellClass = (() => {
         if (String(formData.templateId || '').startsWith('barch-')) {
@@ -688,14 +723,17 @@ const PortfolioEditor = () => {
                         </div>
 
                         <div className={`${editorShellClass} min-h-[80vh]`}>
-                            <div ref={livePreviewRef} className="rounded-xl overflow-hidden border border-white/10">
+                            <div id="dps-live-template-preview" ref={livePreviewRef} className="rounded-xl overflow-hidden border border-white/10">
+                                <div id="dps-live-template-preview-main">
                                 <PortfolioView
                                     portfolioOverride={buildPortfolioPayload()}
                                     editable={!isExportingTemplate}
                                     onPortfolioChange={!isExportingTemplate ? setFormData : undefined}
                                     hideFooterBadge
                                     exportMode={isExportingTemplate}
+                                    editorScopeId="dps-live-template-preview-main"
                                 />
+                                </div>
                             </div>
                             <div className="flex flex-wrap gap-2" data-export-hide="1">
                                 <button
