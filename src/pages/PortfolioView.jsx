@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
 import { Github, Linkedin, Mail, Menu, X, ChevronUp } from 'lucide-react';
@@ -6,11 +6,95 @@ import { Github, Linkedin, Mail, Menu, X, ChevronUp } from 'lucide-react';
 const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolioChange = null, hideFooterBadge = false, suppressTemplateCopies = false, exportMode = false, editorScopeId = '' }) => {
     const { id } = useParams();
     const location = useLocation();
-    const { getStudentPortfolio, templates, loading } = useData();
-    let portfolio = portfolioOverride || getStudentPortfolio(id);
-    let previewTemplateConfig = null;
-    const isEditable = Boolean(editable && typeof onPortfolioChange === 'function');
+    const { getStudentPortfolio, getTemplateById, loading } = useData();
+    const normalizeText = (value, fallback = '') => {
+        if (typeof value === 'string') return value;
+        if (value === null || value === undefined) return fallback;
+        return String(value);
+    };
 
+    const normalizeProject = (project) => {
+        const safeProject = project && typeof project === 'object' ? project : {};
+        return {
+            ...safeProject,
+            title: normalizeText(safeProject.title),
+            desc: normalizeText(safeProject.desc),
+            tech: normalizeText(safeProject.tech),
+            year: normalizeText(safeProject.year),
+            image: normalizeText(safeProject.image),
+            imageUrl: normalizeText(safeProject.imageUrl),
+            repoUrl: normalizeText(safeProject.repoUrl),
+            pdfUrl: normalizeText(safeProject.pdfUrl),
+            pdfName: normalizeText(safeProject.pdfName),
+        };
+    };
+
+    const normalizeCertification = (certification) => {
+        const safeCertification = certification && typeof certification === 'object' ? certification : {};
+        return {
+            ...safeCertification,
+            name: normalizeText(safeCertification.name),
+            issuer: normalizeText(safeCertification.issuer),
+        };
+    };
+
+    const normalizeMeta = (meta) => {
+        const safeMeta = meta && typeof meta === 'object' ? meta : {};
+        const stringKeys = [
+            'fullName', 'role', 'education', 'educationYears', 'experience', 'experienceYears',
+            'college', 'company', 'contactEmail', 'linkedinUrl', 'githubUrl', 'heroImage',
+            'profileImage', 'greetingText', 'aboutHeading', 'workHeading', 'contactHeading',
+            'contactLead', 'uniconsProjectNote', 'uniconsFooterText',
+        ];
+        const normalized = { ...safeMeta };
+
+        stringKeys.forEach((key) => {
+            normalized[key] = normalizeText(safeMeta[key]);
+        });
+
+        normalized.templateStyle = safeMeta.templateStyle && typeof safeMeta.templateStyle === 'object'
+            ? {
+                ...safeMeta.templateStyle,
+                fontFamily: normalizeText(safeMeta.templateStyle.fontFamily, 'default'),
+                textScale: Number(safeMeta.templateStyle.textScale || 100),
+            }
+            : { fontFamily: 'default', textScale: 100 };
+
+        normalized.templatePageCopies = Array.isArray(safeMeta.templatePageCopies)
+            ? safeMeta.templatePageCopies.filter((item) => item && typeof item === 'object')
+            : [];
+
+        normalized.templatePages = Array.isArray(safeMeta.templatePages)
+            ? safeMeta.templatePages
+                .filter((item) => item && typeof item === 'object')
+                .map((item) => ({
+                    ...item,
+                    title: normalizeText(item.title),
+                    content: normalizeText(item.content),
+                    image: normalizeText(item.image),
+                }))
+            : [];
+
+        return normalized;
+    };
+
+    const normalizePortfolio = (source, studentIdOverride = undefined) => {
+        if (!source || typeof source !== 'object') return null;
+
+        return {
+            ...source,
+            studentId: normalizeText(source.studentId || studentIdOverride),
+            about: normalizeText(source.about),
+            skills: Array.isArray(source.skills) ? source.skills.map((skill) => normalizeText(skill)).filter(Boolean) : [],
+            projects: Array.isArray(source.projects) ? source.projects.map(normalizeProject) : [],
+            certifications: Array.isArray(source.certifications) ? source.certifications.map(normalizeCertification) : [],
+            meta: normalizeMeta(source.meta),
+            templateId: typeof source.templateId === 'string' && source.templateId.trim() ? source.templateId : 'modern',
+        };
+    };
+
+    let portfolio = normalizePortfolio(portfolioOverride || getStudentPortfolio(id), id);
+    const isEditable = Boolean(editable && typeof onPortfolioChange === 'function');
     const isPreviewMode = (() => {
         if (portfolioOverride) return false;
         try {
@@ -33,11 +117,11 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             if (cached) {
                 const parsed = JSON.parse(cached);
                 if (parsed && typeof parsed === 'object') {
-                    portfolio = {
-                        ...portfolio,
+                    portfolio = normalizePortfolio({
+                        ...(portfolio || {}),
                         ...parsed,
                         studentId: id,
-                    };
+                    }, id);
                 }
             }
             const configRaw = localStorage.getItem(`dps_preview_template_config_${id}`);
@@ -52,55 +136,22 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         }
     }
 
-    if (!portfolioOverride && loading) return <div className="text-white text-center mt-20">Loading portfolio...</div>;
-    if (!portfolio) return <div className="text-white text-center mt-20">Portfolio not found or not published.</div>;
+    const isLoadingPortfolio = !portfolioOverride && loading;
+    const isMissingPortfolio = !portfolio;
+    portfolio = portfolio || {
+        studentId: normalizeText(id),
+        about: '',
+        skills: [],
+        projects: [],
+        certifications: [],
+        meta: normalizeMeta({}),
+        templateId: 'modern',
+    };
 
-    const {
-        about,
-        skills,
-        projects,
-        certifications,
-        templateId: rawTemplateId,
-    } = portfolio;
-    const globalMeta = portfolio?.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
-    const currentTemplate = previewTemplateConfig || (Array.isArray(templates)
-        ? templates.find((template) => template.id === rawTemplateId)
-        : null);
-    const renderableTemplateIds = new Set([
-        'modern',
-        'creative',
-        'barch-red',
-        'btech',
-        'btech-bedimcode-1',
-        'btech-bedimcode-2',
-        'btech-cs',
-        'btech-cs-unicons',
-        'btech-cs-devfolio',
-        'btech-cs-systems',
-        'btech-cs-ml',
-        'btech-mech',
-        'btech-mech-wajiha',
-        'btech-eee',
-        'btech-ece',
-        'btech-robo',
-        'barch-ece',
-        'barch-robo',
-        'barch-portfolio-a',
-        'barch-portfolio-b',
-        'academic',
-    ]);
-    const templateId = (() => {
-        const requested = String(rawTemplateId || '').trim();
-        if (requested && renderableTemplateIds.has(requested)) return requested;
-
-        const configuredBase = String(currentTemplate?.baseTemplateId || '').trim();
-        if (configuredBase && renderableTemplateIds.has(configuredBase)) return configuredBase;
-
-        return 'modern';
-    })();
-    const accentColor = String(currentTemplate?.themeColor || '#2563eb').trim() || '#2563eb';
-    const backgroundColor = String(globalMeta?.templateBackgroundColor || currentTemplate?.backgroundColor || '').trim();
-    const baseSectionVisibility = {
+    const { about, skills, projects, certifications, templateId } = portfolio;
+    const globalMeta = portfolio.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
+    const templateConfig = getTemplateById(templateId);
+    const sectionVisibility = {
         about: true,
         skills: true,
         projects: true,
@@ -111,28 +162,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         testimonial: true,
         contact: true,
         extraPages: true,
-        portfolio: true,
-        project: true,
-    };
-    const templateSectionDefaults = (() => {
-        if (!Array.isArray(currentTemplate?.sections) || currentTemplate.sections.length === 0) {
-            return baseSectionVisibility;
-        }
-
-        const fromTemplate = Object.keys(baseSectionVisibility).reduce((acc, key) => {
-            acc[key] = false;
-            return acc;
-        }, {});
-
-        currentTemplate.sections.forEach((section) => {
-            const key = String(section?.key || '').trim();
-            if (!key) return;
-            fromTemplate[key] = section?.enabled !== false;
-        });
-        return fromTemplate;
-    })();
-    const sectionVisibility = {
-        ...templateSectionDefaults,
+        ...(templateConfig?.defaultSectionVisibility || {}),
         ...(globalMeta.sectionVisibility || {}),
     };
     const showSection = (key) => sectionVisibility[key] !== false;
@@ -171,7 +201,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         }, [])
         .filter((section) => showSection(section.key));
     const templateStyle = portfolio?.meta?.templateStyle || {};
-    const templatePageCopies = Array.isArray(portfolio?.meta?.templatePageCopies) ? portfolio.meta.templatePageCopies : [];
+    const templatePages = Array.isArray(portfolio?.meta?.templatePages) ? portfolio.meta.templatePages : [];
     const fontFamilyMap = {
         default: undefined,
         poppins: "'Poppins', 'Segoe UI', sans-serif",
@@ -420,6 +450,37 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         }));
     };
 
+    const updateWorkHighlightItem = (index, patch) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => {
+            const list = Array.isArray(prev?.meta?.workHighlights) ? [...prev.meta.workHighlights] : [];
+            list[index] = { ...(list[index] || {}), ...patch };
+            return { ...prev, meta: { ...(prev.meta || {}), workHighlights: list } };
+        });
+    };
+
+    const addWorkHighlightItem = (item = { title: 'New Highlight', text: 'Describe this work item.' }) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            meta: {
+                ...(prev.meta || {}),
+                workHighlights: [...(Array.isArray(prev?.meta?.workHighlights) ? prev.meta.workHighlights : []), item],
+            },
+        }));
+    };
+
+    const removeWorkHighlightItem = (index) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            meta: {
+                ...(prev.meta || {}),
+                workHighlights: (Array.isArray(prev?.meta?.workHighlights) ? prev.meta.workHighlights : []).filter((_, i) => i !== index),
+            },
+        }));
+    };
+
     const setSkillsList = (nextSkills) => {
         if (!isEditable) return;
         onPortfolioChange((prev) => ({ ...prev, skills: nextSkills }));
@@ -522,13 +583,28 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         }));
     };
 
-    const removeTemplatePageCopy = (index) => {
+    const updateTemplatePage = (index, patch) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => {
+            const nextPages = Array.isArray(prev?.meta?.templatePages) ? [...prev.meta.templatePages] : [];
+            nextPages[index] = { ...(nextPages[index] || {}), ...patch };
+            return {
+                ...prev,
+                meta: {
+                    ...(prev.meta || {}),
+                    templatePages: nextPages,
+                },
+            };
+        });
+    };
+
+    const removeTemplatePage = (index) => {
         if (!isEditable) return;
         onPortfolioChange((prev) => ({
             ...prev,
             meta: {
                 ...(prev.meta || {}),
-                templatePageCopies: (Array.isArray(prev?.meta?.templatePageCopies) ? prev.meta.templatePageCopies : []).filter((_, i) => i !== index),
+                templatePages: (Array.isArray(prev?.meta?.templatePages) ? prev.meta.templatePages : []).filter((_, i) => i !== index),
             },
         }));
     };
@@ -539,11 +615,47 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             return <Tag className={className}>{value || placeholder}</Tag>;
         }
 
+        const elementRef = useRef(null);
+        const isEditingRef = useRef(false);
+
+        useEffect(() => {
+            const nextValue = String(value || '');
+            if (isEditingRef.current) return;
+
+            if (!elementRef.current) return;
+
+            const nextDisplay = nextValue || placeholder;
+            if (elementRef.current.textContent !== nextDisplay) {
+                elementRef.current.textContent = nextDisplay;
+            }
+        }, [value, placeholder]);
+
+        const commit = (text) => {
+            const nextValue = String(text || '');
+            onCommit(nextValue);
+        };
+
         return (
             <Tag
+                ref={elementRef}
                 contentEditable
                 suppressContentEditableWarning
-                onBlur={(e) => onCommit(e.currentTarget.textContent || '')}
+                onFocus={(e) => {
+                    isEditingRef.current = true;
+                    if (!String(value || '') && e.currentTarget.textContent === placeholder) {
+                        e.currentTarget.textContent = '';
+                    }
+                }}
+                onBlur={(e) => {
+                    isEditingRef.current = false;
+                    commit(e.currentTarget.textContent || '');
+                }}
+                onKeyDown={(e) => {
+                    if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape') {
+                        e.preventDefault();
+                        e.currentTarget.blur();
+                    }
+                }}
                 className={`${className} outline-none rounded px-1 -mx-1 hover:bg-black/10`}
             >
                 {value || placeholder}
@@ -643,7 +755,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
     );
 
     useEffect(() => {
-        if (!isEditable) return undefined;
+        if (!isEditable || exportMode) return undefined;
 
         const matches = {
             skills: /(skills?|expertise|tech stack|tools)/i,
@@ -708,181 +820,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                 if (heading) delete heading.dataset.dpsInlineAdd;
             });
         };
-    }, [isEditable, templateId, projects?.length, skills?.length, certifications?.length, editorScopeId]);
-
-    useEffect(() => {
-        const scope = (editorScopeId && document.getElementById(editorScopeId)) || document.body;
-        if (!scope) return undefined;
-
-        const selectors = 'h1,h2,h3,h4,h5,h6,p,li,blockquote,figcaption,label';
-        const editableNodes = Array.from(scope.querySelectorAll(selectors)).filter((node) => {
-            if (node.closest('[data-dps-no-inline-edit="1"]')) return false;
-            if (node.closest('button,input,textarea,select')) return false;
-            if (node.querySelector('input,textarea,select,button')) return false;
-            const text = String(node.textContent || '').trim();
-            return text.length > 0;
-        });
-
-        const textOverrides = globalMeta?.textOverrides || {};
-        const listeners = [];
-
-        const buildStableTextKey = (node) => {
-            const parts = [];
-            let current = node;
-            while (current && current !== scope) {
-                const parent = current.parentElement;
-                if (!parent) break;
-                const sameTagSiblings = Array.from(parent.children).filter(
-                    (sibling) => sibling.tagName === current.tagName
-                );
-                const siblingIndex = sameTagSiblings.indexOf(current);
-                parts.unshift(`${current.tagName.toLowerCase()}:${siblingIndex}`);
-                current = parent;
-            }
-            return `dps_text_${parts.join('/')}`;
-        };
-
-        editableNodes.forEach((node) => {
-            const key = buildStableTextKey(node);
-            node.setAttribute('data-dps-text-key', key);
-
-            if (typeof textOverrides[key] === 'string' && document.activeElement !== node) {
-                node.innerText = textOverrides[key];
-            }
-
-            if (!isEditable) return;
-            if (node.getAttribute('contenteditable') === 'true') return;
-
-            node.setAttribute('contenteditable', 'true');
-            node.classList.add('outline-none', 'ring-1', 'ring-transparent', 'hover:ring-blue-400/40', 'rounded');
-
-            const onBlur = () => {
-                const value = String(node.innerText || node.textContent || '');
-                onPortfolioChange((prev) => ({
-                    ...prev,
-                    meta: {
-                        ...(prev.meta || {}),
-                        textOverrides: {
-                            ...(prev?.meta?.textOverrides || {}),
-                            [key]: value,
-                        },
-                    },
-                }));
-            };
-            node.addEventListener('blur', onBlur);
-            listeners.push({ node, onBlur });
-        });
-
-        return () => {
-            listeners.forEach(({ node, onBlur }) => {
-                node.removeEventListener('blur', onBlur);
-                node.removeAttribute('contenteditable');
-                node.classList.remove('outline-none', 'ring-1', 'ring-transparent', 'hover:ring-blue-400/40', 'rounded');
-            });
-        };
-    }, [isEditable, templateId, globalMeta?.textOverrides, onPortfolioChange, editorScopeId]);
-
-    useEffect(() => {
-        if (!isEditable) return undefined;
-
-        const scope = (editorScopeId && document.getElementById(editorScopeId)) || document.body;
-        if (!scope) return undefined;
-
-        const existing = scope.querySelector('[data-dps-inline-section-toolbar="1"]');
-        if (existing) existing.remove();
-
-        const toolbar = document.createElement('div');
-        toolbar.setAttribute('data-dps-inline-section-toolbar', '1');
-        toolbar.setAttribute('data-dps-no-inline-edit', '1');
-        toolbar.className = 'mb-4 p-3 rounded-lg border border-blue-300 bg-blue-50 text-slate-800';
-
-        const title = document.createElement('div');
-        title.className = 'text-sm font-semibold mb-2';
-        title.textContent = 'Template Inline Controls';
-        toolbar.appendChild(title);
-
-        const controlsWrap = document.createElement('div');
-        controlsWrap.className = 'flex flex-wrap gap-2';
-
-        const sectionKeys = [
-            'about',
-            'skills',
-            'projects',
-            'certifications',
-            'qualification',
-            'services',
-            'testimonials',
-            'contact',
-            'extraPages',
-            ...customTemplateSections.map((s) => s.key),
-        ];
-        const uniqueSectionKeys = Array.from(new Set(sectionKeys));
-
-        uniqueSectionKeys.forEach((key) => {
-            const visible = showSection(key);
-            const button = document.createElement('button');
-            button.type = 'button';
-            button.className = visible
-                ? 'px-2 py-1 rounded-full text-xs border border-blue-400 bg-blue-600 text-white'
-                : 'px-2 py-1 rounded-full text-xs border border-slate-400 bg-white text-slate-700';
-            button.textContent = visible ? `Hide ${key}` : `Show ${key}`;
-            button.addEventListener('click', () => setSectionVisibilityInline(key, !visible));
-            controlsWrap.appendChild(button);
-        });
-
-        const addButton = document.createElement('button');
-        addButton.type = 'button';
-        addButton.className = 'px-3 py-1 rounded-full text-xs border border-indigo-400 bg-indigo-600 text-white';
-        addButton.textContent = '+ Add Custom Section';
-        addButton.addEventListener('click', () => {
-            const label = window.prompt('Section label (example: Achievements)');
-            const cleanLabel = String(label || '').trim();
-            if (!cleanLabel) return;
-            const baseKey = cleanLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-            if (!baseKey) return;
-
-            onPortfolioChange((prev) => {
-                const usedKeys = new Set([
-                    ...Array.from(builtInSectionKeys),
-                    ...Object.keys(prev?.meta?.customSections || {}),
-                    ...Object.keys(prev?.meta?.sectionVisibility || {}),
-                ]);
-                let key = baseKey;
-                let suffix = 2;
-                while (usedKeys.has(key)) {
-                    key = `${baseKey}_${suffix}`;
-                    suffix += 1;
-                }
-
-                return {
-                    ...prev,
-                    meta: {
-                        ...(prev?.meta || {}),
-                        sectionVisibility: {
-                            ...(prev?.meta?.sectionVisibility || {}),
-                            [key]: true,
-                        },
-                        customSections: {
-                            ...(prev?.meta?.customSections || {}),
-                            [key]: `Write ${cleanLabel} content here.`,
-                        },
-                        customSectionLabels: {
-                            ...(prev?.meta?.customSectionLabels || {}),
-                            [key]: cleanLabel,
-                        },
-                    },
-                };
-            });
-        });
-        controlsWrap.appendChild(addButton);
-
-        toolbar.appendChild(controlsWrap);
-        scope.prepend(toolbar);
-
-        return () => {
-            if (toolbar.parentElement) toolbar.parentElement.removeChild(toolbar);
-        };
-    }, [isEditable, templateId, customTemplateSections, sectionVisibility, onPortfolioChange, editorScopeId]);
+    }, [isEditable, exportMode, templateId, projects?.length, skills?.length, certifications?.length]);
 
     const getProjectImage = (p) => p?.image || p?.imageUrl || '';
     const ProjectAttachments = ({ p, dark = false, showImage = true }) => {
@@ -910,69 +848,159 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             </div>
         );
     };
+    const getExtraPageTheme = () => {
+        if (String(templateId || '').startsWith('barch-')) {
+            return {
+                section: 'bg-[#f4efe8] text-slate-900',
+                shell: 'mx-auto max-w-6xl px-6 py-14',
+                card: 'overflow-hidden rounded-[2rem] border border-rose-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.12)]',
+                hero: 'border-b border-rose-100 bg-gradient-to-r from-rose-900 via-rose-700 to-orange-500 px-8 py-10 text-white',
+                content: 'grid gap-8 px-8 py-8 lg:grid-cols-[1.2fr_0.8fr]',
+                title: 'text-3xl md:text-4xl font-black uppercase tracking-[0.16em]',
+                text: 'text-base leading-8 text-slate-700',
+                badge: 'inline-flex items-center rounded-full bg-white/15 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-white',
+                emptyImage: 'flex min-h-[260px] items-center justify-center rounded-[1.5rem] border border-dashed border-rose-200 bg-rose-50 px-6 text-center text-sm text-rose-500',
+            };
+        }
+        if (templateId === 'btech-cs-unicons') {
+            return {
+                section: 'bg-[#f7f9fc] text-slate-900',
+                shell: 'mx-auto max-w-6xl px-6 py-10',
+                card: 'rounded-[2rem] border border-slate-200 bg-white shadow-sm',
+                hero: 'border-b border-slate-200 px-8 py-8',
+                content: 'grid gap-6 px-8 py-8 lg:grid-cols-[1.1fr_0.9fr]',
+                title: 'text-3xl font-bold',
+                text: 'text-base leading-8 text-slate-600',
+                badge: 'inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-blue-700',
+                emptyImage: 'flex min-h-[240px] items-center justify-center rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50 px-6 text-center text-sm text-slate-500',
+            };
+        }
+        if (String(templateId || '').startsWith('btech-')) {
+            return {
+                section: 'bg-slate-950 text-slate-100',
+                shell: 'mx-auto max-w-6xl px-6 py-12',
+                card: 'overflow-hidden rounded-[2rem] border border-cyan-400/20 bg-slate-900/80 shadow-[0_30px_80px_rgba(8,47,73,0.35)]',
+                hero: 'border-b border-cyan-400/20 bg-gradient-to-r from-slate-900 via-cyan-950 to-blue-950 px-8 py-9',
+                content: 'grid gap-6 px-8 py-8 lg:grid-cols-[1.1fr_0.9fr]',
+                title: 'text-3xl md:text-4xl font-bold text-white',
+                text: 'text-base leading-8 text-slate-300',
+                badge: 'inline-flex items-center rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200',
+                emptyImage: 'flex min-h-[240px] items-center justify-center rounded-[1.5rem] border border-dashed border-cyan-400/25 bg-slate-950/60 px-6 text-center text-sm text-cyan-200/70',
+            };
+        }
+        if (templateId === 'academic') {
+            return {
+                section: 'bg-[#f8fafc] text-slate-900',
+                shell: 'mx-auto max-w-6xl px-6 py-12',
+                card: 'overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-sm',
+                hero: 'border-b border-slate-200 bg-slate-900 px-8 py-9 text-white',
+                content: 'grid gap-6 px-8 py-8 lg:grid-cols-[1.15fr_0.85fr]',
+                title: 'text-3xl font-bold',
+                text: 'text-base leading-8 text-slate-700',
+                badge: 'inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-200',
+                emptyImage: 'flex min-h-[240px] items-center justify-center rounded-[1.25rem] border border-dashed border-slate-300 bg-slate-50 px-6 text-center text-sm text-slate-500',
+            };
+        }
+        return {
+            section: 'bg-white text-slate-900',
+            shell: 'mx-auto max-w-6xl px-6 py-12',
+            card: 'overflow-hidden rounded-[1.75rem] border border-slate-200 bg-white shadow-[0_25px_60px_rgba(15,23,42,0.08)]',
+            hero: 'border-b border-slate-200 bg-gradient-to-r from-slate-900 to-slate-700 px-8 py-9 text-white',
+            content: 'grid gap-6 px-8 py-8 lg:grid-cols-[1.15fr_0.85fr]',
+            title: 'text-3xl font-bold',
+            text: 'text-base leading-8 text-slate-700',
+            badge: 'inline-flex items-center rounded-full bg-white/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-200',
+            emptyImage: 'flex min-h-[240px] items-center justify-center rounded-[1.25rem] border border-dashed border-slate-300 bg-slate-50 px-6 text-center text-sm text-slate-500',
+        };
+    };
+
     const TemplateExtraPages = () => {
-        if (suppressTemplateCopies || !showSection('extraPages') || !templatePageCopies.length) return null;
+        if (suppressTemplateCopies || !showSection('extraPages') || !templatePages.length) return null;
+
+        const theme = getExtraPageTheme();
+
         return (
             <div>
-                {templatePageCopies.map((pagePortfolio, i) => (
-                    <section key={i} className="dps-extra-page border-t border-white/10">
-                        <div className="flex justify-end max-w-6xl mx-auto px-6 py-4">
-                            {isEditable && (
-                                <button
-                                    type="button"
-                                    onClick={() => removeTemplatePageCopy(i)}
-                                    className="text-xs px-2 py-1 rounded border border-red-500/40 text-red-400 hover:bg-red-500/10"
-                                >
-                                    Remove Page {i + 2}
-                                </button>
-                            )}
-                        </div>
-                        <div id={`dps-live-template-preview-copy-${i}`}>
-                            <PortfolioView
-                                portfolioOverride={{
-                                    ...pagePortfolio,
-                                    meta: {
-                                        ...(pagePortfolio?.meta || {}),
-                                        sectionVisibility: {
-                                            ...(globalMeta.sectionVisibility || {}),
-                                            ...(pagePortfolio?.meta?.sectionVisibility || {}),
-                                        },
-                                    },
-                                }}
-                                editable={isEditable}
-                                onPortfolioChange={(updater) => {
-                                    if (!isEditable) return;
-                                    onPortfolioChange((prev) => {
-                                        const copies = Array.isArray(prev?.meta?.templatePageCopies) ? [...prev.meta.templatePageCopies] : [];
-                                        const current = copies[i] || {};
-                                        const next = typeof updater === 'function' ? updater(current) : updater;
-                                        copies[i] = {
-                                            ...next,
-                                            meta: {
-                                                ...(next?.meta || {}),
-                                                templatePageCopies: [],
-                                                templatePages: [],
-                                            },
-                                        };
-                                        return {
-                                            ...prev,
-                                            meta: {
-                                                ...(prev.meta || {}),
-                                                templatePageCopies: copies,
-                                            },
-                                        };
-                                    });
-                                }}
-                                hideFooterBadge
-                                suppressTemplateCopies
-                                editorScopeId={`dps-live-template-preview-copy-${i}`}
-                            />
+                {templatePages.map((page, i) => (
+                    <section key={`template-page-${i}`} className={theme.section} style={pageStyle}>
+                        <div className={theme.shell}>
+                            <div className={theme.card}>
+                                <div className={theme.hero}>
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div className="space-y-3">
+                                            <span className={theme.badge}>Page {i + 2}</span>
+                                            <EditableText
+                                                as="h2"
+                                                className={theme.title}
+                                                value={page?.title}
+                                                placeholder={`Page ${i + 2}`}
+                                                onCommit={(value) => updateTemplatePage(i, { title: value })}
+                                            />
+                                        </div>
+                                        {isEditable && !exportMode && (
+                                            <button
+                                                type="button"
+                                                onClick={() => removeTemplatePage(i)}
+                                                className="rounded-full border border-white/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-white hover:bg-white/10"
+                                            >
+                                                Remove
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className={theme.content}>
+                                    <div className="space-y-4">
+                                        <EditableText
+                                            as="p"
+                                            className={theme.text}
+                                            value={page?.content}
+                                            placeholder="Write the content for this extra page."
+                                            onCommit={(value) => updateTemplatePage(i, { content: value })}
+                                        />
+                                        {isEditable && !exportMode && (
+                                            <textarea
+                                                value={page?.content || ''}
+                                                onChange={(e) => updateTemplatePage(i, { content: e.target.value })}
+                                                rows={8}
+                                                className="w-full rounded-2xl border border-slate-300 bg-white/90 px-4 py-3 text-sm text-slate-700 outline-none focus:border-blue-500"
+                                            />
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-4">
+                                        {page?.image ? (
+                                            <img
+                                                src={page.image}
+                                                alt={page?.title || `Page ${i + 2}`}
+                                                className="h-full min-h-[240px] w-full rounded-[1.5rem] object-cover"
+                                            />
+                                        ) : (
+                                            <div className={theme.emptyImage}>
+                                                Add an image URL to place a visual on this page.
+                                            </div>
+                                        )}
+                                        {isEditable && !exportMode && (
+                                            <input
+                                                type="text"
+                                                value={page?.image || ''}
+                                                onChange={(e) => updateTemplatePage(i, { image: e.target.value })}
+                                                placeholder="Image URL"
+                                                className="w-full rounded-2xl border border-slate-300 bg-white/90 px-4 py-3 text-sm text-slate-700 outline-none focus:border-blue-500"
+                                            />
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </section>
                 ))}
             </div>
         );
     };
+
+    if (isLoadingPortfolio) return <div className="text-white text-center mt-20">Loading portfolio...</div>;
+    if (isMissingPortfolio) return <div className="text-white text-center mt-20">Portfolio not found or not published.</div>;
 
     // Modern Minimal Template
     if (templateId === 'modern') {
@@ -1362,7 +1390,8 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                             </div>
                         ))}
                     </div>
-                </section>
+                </section>
+
                 <Footer />
             </div>
         );
@@ -1394,9 +1423,9 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             skills: showSection('skills'),
             qualification: showSection('qualification'),
             services: showSection('services'),
-            portfolio: showSection('portfolio') && showSection('projects'),
-            project: showSection('project'),
-            testimonial: showSection('testimonial') && showSection('testimonials'),
+            portfolio: showSection('projects'),
+            project: showSection('projects'),
+            testimonial: showSection('testimonials'),
             contact: showSection('contact'),
             ...(meta.uniconsSections || {}),
         };
@@ -1434,6 +1463,15 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         <section className="skills section bg-white rounded-2xl border border-slate-200 p-8" id="skills">
                             <div className="flex items-center justify-between gap-3 mb-4">
                                 <h2 className="text-2xl font-bold">Skills</h2>
+                                {isEditable && (
+                                    <button
+                                        type="button"
+                                        onClick={() => addSkillItem('New Skill')}
+                                        className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                                    >
+                                        Add Skill
+                                    </button>
+                                )}
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 {(skills || []).map((s, i) => (
@@ -1446,6 +1484,16 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                                             />
                                         ) : (
                                             <span>{s}</span>
+                                        )}
+                                        {isEditable && (
+                                            <button
+                                                type="button"
+                                                onClick={() => removeSkillItem(i)}
+                                                className="rounded-full text-xs font-bold text-blue-600 hover:text-red-600"
+                                                aria-label={`Remove skill ${i + 1}`}
+                                            >
+                                                x
+                                            </button>
                                         )}
                                     </span>
                                 ))}
@@ -1475,12 +1523,30 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         <section className="services section bg-white rounded-2xl border border-slate-200 p-8" id="services">
                             <div className="flex items-center justify-between gap-3 mb-4">
                                 <h2 className="text-2xl font-bold">Services</h2>
+                                {isEditable && (
+                                    <button
+                                        type="button"
+                                        onClick={() => addMetaListItem('uniconsServices', { title: 'New Service', text: 'Describe this service.' })}
+                                        className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                                    >
+                                        Add Service
+                                    </button>
+                                )}
                             </div>
                             <div className="grid md:grid-cols-3 gap-4">
                                 {serviceItems.map((srv, i) => (
                                     <article key={`${srv.title}-${i}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                                         <div className="flex items-start justify-between gap-2">
                                             <EditableText as="h3" className="font-semibold" value={srv.title} placeholder="Service title" onCommit={(v) => updateMetaListItem('uniconsServices', i, { title: v })} />
+                                            {isEditable && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeMetaListItem('uniconsServices', i)}
+                                                    className="rounded-full border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                                                >
+                                                    Remove
+                                                </button>
+                                            )}
                                         </div>
                                         <EditableText as="p" className="text-sm text-slate-600 mt-2" value={srv.text} placeholder="Service description" onCommit={(v) => updateMetaListItem('uniconsServices', i, { text: v })} />
                                     </article>
@@ -1499,6 +1565,15 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                                     <article key={i} className="rounded-xl border border-slate-200 p-5">
                                         <div className="flex items-start justify-between gap-2">
                                             <EditableText as="h3" className="text-xl font-semibold" value={p.title || `Project ${i + 1}`} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                            {isEditable && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeProjectItem(i)}
+                                                    className="rounded-full border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                                                >
+                                                    Remove
+                                                </button>
+                                            )}
                                         </div>
                                         <EditableText as="p" className="text-slate-600 mt-2" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
                                         <ProjectAttachments p={p} />
@@ -1525,12 +1600,30 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         <section className="testimonial section bg-white rounded-2xl border border-slate-200 p-8">
                             <div className="flex items-center justify-between gap-3 mb-4">
                                 <h2 className="text-2xl font-bold">Testimonial</h2>
+                                {isEditable && (
+                                    <button
+                                        type="button"
+                                        onClick={() => addMetaListItem('uniconsTestimonials', { name: 'Name', text: 'Share a testimonial here.' })}
+                                        className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                                    >
+                                        Add Testimonial
+                                    </button>
+                                )}
                             </div>
                             <div className="grid md:grid-cols-2 gap-4">
                                 {testimonials.map((t, i) => (
                                     <blockquote key={`${t.name}-${i}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                                         <div className="flex items-start justify-between gap-2">
                                             <EditableText as="p" className="text-slate-700" value={t.text} placeholder="Testimonial text" onCommit={(v) => updateMetaListItem('uniconsTestimonials', i, { text: v })} />
+                                            {isEditable && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removeMetaListItem('uniconsTestimonials', i)}
+                                                    className="rounded-full border border-red-200 px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+                                                >
+                                                    Remove
+                                                </button>
+                                            )}
                                         </div>
                                         <EditableText as="footer" className="text-sm text-slate-500 mt-2" value={`- ${t.name || 'Name'}`} placeholder="- Name" onCommit={(v) => updateMetaListItem('uniconsTestimonials', i, { name: String(v).replace(/^-+\s*/, '') })} />
                                     </blockquote>
@@ -1752,6 +1845,11 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                 commitRoot={commitRoot}
                 commitMeta={commitMeta}
                 commitProject={commitProject}
+                updateSkillItem={updateSkillItem}
+                addSkillItem={addSkillItem}
+                removeSkillItem={removeSkillItem}
+                updateCertificationItem={updateCertificationItem}
+                isEditable={isEditable}
                 Footer={Footer}
             />
         );
@@ -2745,11 +2843,21 @@ const BtechMechClassicTemplate = ({
     commitRoot,
     commitMeta,
     commitProject,
+    updateSkillItem,
+    addSkillItem,
+    removeSkillItem,
+    updateCertificationItem,
+    isEditable = false,
     Footer,
 }) => {
     const meta = portfolio.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
     const fullName = meta.fullName || 'Mechanical Engineering Student';
     const role = meta.role || 'Mechanical Engineering Portfolio';
+    const greetingText = meta.greetingText || 'Hey there!';
+    const aboutHeading = meta.aboutHeading || 'ABOUT';
+    const workHeading = meta.workHeading || 'WORK';
+    const contactHeading = meta.contactHeading || 'CONTACT';
+    const contactLead = meta.contactLead || 'Feel free to contact me.';
     const contactEmail = meta.contactEmail || 'contact@example.com';
     const linkedinUrl = meta.linkedinUrl || '';
     const githubUrl = meta.githubUrl || '';
@@ -2807,19 +2915,22 @@ const BtechMechClassicTemplate = ({
         const match = raw.match(/^(.*?)(?:\s*[-:]\s*|\s+)(\d{1,3})%$/) || raw.match(/^(.*?)[( ](\d{1,3})%[)]?$/);
         const percent = Math.max(35, Math.min(100, Number(match?.[2] || [90, 80, 75, 70, 65, 60, 55, 50][idx % 8])));
         const label = String(match?.[1] || raw || `Skill ${idx + 1}`).trim();
-        return { label, percent, accent: idx % 2 === 0 ? '#7372dd' : '#b7b6fd' };
+        return { label, percent, sourceIndex: idx, accent: idx % 2 === 0 ? '#7372dd' : '#b7b6fd' };
     });
 
     const leftSkills = parsedSkills.filter((_, idx) => idx % 2 === 0);
     const rightSkills = parsedSkills.filter((_, idx) => idx % 2 === 1);
     const featuredProjects = (Array.isArray(projects) ? projects : []).slice(0, 3);
     const getProjectImage = (project) => project?.image || project?.imageUrl || '';
-    const workHighlights = [
+    const defaultWorkHighlights = [
         { title: 'Responsive', text: 'Layouts adapt cleanly across desktop, tablet, and mobile screens.' },
         { title: 'Precise', text: 'Design decisions focus on clarity, usability, and practical engineering communication.' },
         { title: 'Intuitive', text: 'Sections are structured to make technical work easy to scan and understand.' },
         { title: 'Dynamic', text: 'Project stories, visuals, and links bring the portfolio to life.' },
     ];
+    const workHighlights = Array.isArray(meta.workHighlights) && meta.workHighlights.length > 0
+        ? meta.workHighlights
+        : defaultWorkHighlights;
 
     return (
         <div className="min-h-screen bg-white text-slate-800">
@@ -2881,9 +2992,22 @@ const BtechMechClassicTemplate = ({
 
             <section id="home" className="px-6 pb-12 pt-24 text-center">
                 <div className="mx-auto max-w-5xl">
-                    <div className="font-['Lobster','cursive'] text-5xl text-slate-700 sm:text-6xl">Hey there!</div>
+                    <EditableText
+                        as="div"
+                        className="font-['Lobster','cursive'] text-5xl text-slate-700 sm:text-6xl"
+                        value={greetingText}
+                        placeholder="Hey there!"
+                        onCommit={(value) => commitMeta('greetingText', value)}
+                    />
                     <div className="mt-4 text-4xl font-semibold text-slate-700 sm:text-5xl">
-                        I am <span className="text-[#7372dd]">{fullName}</span>
+                        I am{' '}
+                        <EditableText
+                            as="span"
+                            className="text-[#7372dd]"
+                            value={fullName}
+                            placeholder="Your Name"
+                            onCommit={(value) => commitMeta('fullName', value)}
+                        />
                     </div>
                     <EditableText
                         as="p"
@@ -2904,7 +3028,13 @@ const BtechMechClassicTemplate = ({
 
             <section id="about" className="bg-slate-100 px-6 py-16">
                 <div className="mx-auto max-w-6xl">
-                    <h2 className="text-center text-4xl font-bold tracking-wide text-slate-700">ABOUT</h2>
+                    <EditableText
+                        as="h2"
+                        className="text-center text-4xl font-bold tracking-wide text-slate-700"
+                        value={aboutHeading}
+                        placeholder="ABOUT"
+                        onCommit={(value) => commitMeta('aboutHeading', value)}
+                    />
                     <div className="mx-auto mt-4 h-1 w-24 bg-slate-300" />
 
                     <div className="mt-12 grid gap-10 lg:grid-cols-[minmax(0,320px)_1fr]">
@@ -2918,6 +3048,15 @@ const BtechMechClassicTemplate = ({
                                     </div>
                                 )}
                             </div>
+                            {isEditable && (
+                                <input
+                                    type="text"
+                                    value={profileImage}
+                                    onChange={(e) => commitMeta('profileImage', e.target.value)}
+                                    placeholder="Profile image URL"
+                                    className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                                />
+                            )}
                             <h3 className="mt-6 text-2xl font-semibold text-slate-700">Who am I?</h3>
                             <EditableText
                                 as="p"
@@ -2936,8 +3075,23 @@ const BtechMechClassicTemplate = ({
                                         {column.length > 0 ? column.map((skillItem) => (
                                             <div key={`${skillItem.label}-${skillItem.percent}`} className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
                                                 <div className="mb-2 flex items-center justify-between gap-4">
-                                                    <span className="font-semibold text-slate-700">{skillItem.label}</span>
-                                                    <span className="text-sm font-semibold text-slate-500">{skillItem.percent}%</span>
+                                                    <EditableText
+                                                        as="span"
+                                                        className="font-semibold text-slate-700"
+                                                        value={skillItem.label}
+                                                        placeholder={`Skill ${skillItem.sourceIndex + 1}`}
+                                                        onCommit={(value) => updateSkillItem(skillItem.sourceIndex, `${value} ${skillItem.percent}%`)}
+                                                    />
+                                                    <EditableText
+                                                        as="span"
+                                                        className="text-sm font-semibold text-slate-500"
+                                                        value={`${skillItem.percent}%`}
+                                                        placeholder="80%"
+                                                        onCommit={(value) => {
+                                                            const nextPercent = Math.max(35, Math.min(100, Number(String(value || '').replace(/[^\d]/g, '') || skillItem.percent)));
+                                                            updateSkillItem(skillItem.sourceIndex, `${skillItem.label} ${nextPercent}%`);
+                                                        }}
+                                                    />
                                                 </div>
                                                 <div className="h-3 overflow-hidden rounded-full bg-slate-200">
                                                     <div
@@ -2954,6 +3108,26 @@ const BtechMechClassicTemplate = ({
                                     </div>
                                 ))}
                             </div>
+                            {isEditable && (
+                                <div className="mt-4 flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => addSkillItem('New Skill 80%')}
+                                        className="rounded-lg bg-[#7372dd] px-3 py-1 text-sm font-medium text-white"
+                                    >
+                                        Add skill
+                                    </button>
+                                    {Array.isArray(skills) && skills.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => removeSkillItem(Math.max(0, skills.length - 1))}
+                                            className="rounded-lg border border-slate-300 px-3 py-1 text-sm font-medium text-slate-600"
+                                        >
+                                            Remove last
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -2961,28 +3135,77 @@ const BtechMechClassicTemplate = ({
 
             <section id="work" className="px-6 py-16">
                 <div className="mx-auto max-w-6xl">
-                    <h2 className="text-center text-4xl font-bold tracking-wide text-slate-700">WORK</h2>
+                    <EditableText
+                        as="h2"
+                        className="text-center text-4xl font-bold tracking-wide text-slate-700"
+                        value={workHeading}
+                        placeholder="WORK"
+                        onCommit={(value) => commitMeta('workHeading', value)}
+                    />
                     <div className="mx-auto mt-4 h-1 w-24 bg-slate-300" />
 
                     <div className="mt-12 grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-                        {workHighlights.map((item) => (
-                            <div key={item.title} className="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+                        {workHighlights.map((item, index) => (
+                            <div key={`${item.title || 'highlight'}-${index}`} className="rounded-3xl border border-slate-200 bg-white p-6 text-center shadow-sm">
                                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#7372dd]/10 text-2xl font-bold text-[#7372dd]">
-                                    {item.title.charAt(0)}
+                                    {String(item.title || 'H').charAt(0)}
                                 </div>
-                                <h3 className="mt-5 font-['Lobster','cursive'] text-3xl text-slate-700">{item.title}</h3>
-                                <p className="mt-3 leading-7 text-slate-600">{item.text}</p>
+                                <EditableText
+                                    as="h3"
+                                    className="mt-5 font-['Lobster','cursive'] text-3xl text-slate-700"
+                                    value={item.title}
+                                    placeholder={`Highlight ${index + 1}`}
+                                    onCommit={(value) => {
+                                        const next = [...workHighlights];
+                                        next[index] = { ...(next[index] || {}), title: value };
+                                        commitMeta('workHighlights', next);
+                                    }}
+                                />
+                                <EditableText
+                                    as="p"
+                                    className="mt-3 leading-7 text-slate-600"
+                                    value={item.text}
+                                    placeholder="Highlight description"
+                                    onCommit={(value) => {
+                                        const next = [...workHighlights];
+                                        next[index] = { ...(next[index] || {}), text: value };
+                                        commitMeta('workHighlights', next);
+                                    }}
+                                />
                             </div>
                         ))}
                     </div>
+                    {isEditable && (
+                        <div className="mt-4 flex flex-wrap justify-center gap-2">
+                            <button
+                                type="button"
+                                onClick={() => commitMeta('workHighlights', [...workHighlights, { title: 'New Highlight', text: 'Describe this highlight.' }])}
+                                className="rounded-lg bg-[#7372dd] px-3 py-1 text-sm font-medium text-white"
+                            >
+                                Add highlight
+                            </button>
+                            {workHighlights.length > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={() => commitMeta('workHighlights', workHighlights.slice(0, -1))}
+                                    className="rounded-lg border border-slate-300 px-3 py-1 text-sm font-medium text-slate-600"
+                                >
+                                    Remove last
+                                </button>
+                            )}
+                        </div>
+                    )}
 
                     <div className="mt-16">
                         <h3 className="text-center text-3xl font-semibold tracking-wide text-slate-700">PROJECT SHOWCASE</h3>
                         <div className="mx-auto mt-8 max-w-5xl text-justify leading-7 text-slate-600">
                             {(Array.isArray(projects) && projects.length > 0) ? (
-                                <p>
-                                    {projects[0]?.desc || 'Use this area to introduce your best mechanical engineering project, design system, lab build, or fabrication work.'}
-                                </p>
+                                <EditableText
+                                    as="p"
+                                    value={projects[0]?.desc}
+                                    placeholder="Use this area to introduce your best mechanical engineering project, design system, lab build, or fabrication work."
+                                    onCommit={(value) => commitProject(0, 'desc', value)}
+                                />
                             ) : (
                                 <p>Add projects in the editor to populate this showcase area.</p>
                             )}
@@ -3015,6 +3238,15 @@ const BtechMechClassicTemplate = ({
                                             placeholder="Describe this project."
                                             onCommit={(value) => commitProject(index, 'desc', value)}
                                         />
+                                        {isEditable && (
+                                            <input
+                                                type="text"
+                                                value={getProjectImage(project)}
+                                                onChange={(e) => commitProject(index, 'image', e.target.value)}
+                                                placeholder="Project image URL"
+                                                className="mt-3 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-700"
+                                            />
+                                        )}
                                         <ProjectAttachments p={project} />
                                     </div>
                                 </article>
@@ -3032,9 +3264,47 @@ const BtechMechClassicTemplate = ({
 
             <section id="contact" className="bg-slate-100 px-6 py-16">
                 <div className="mx-auto max-w-5xl text-center">
-                    <h2 className="text-4xl font-bold tracking-wide text-slate-700">CONTACT</h2>
+                    <EditableText
+                        as="h2"
+                        className="text-4xl font-bold tracking-wide text-slate-700"
+                        value={contactHeading}
+                        placeholder="CONTACT"
+                        onCommit={(value) => commitMeta('contactHeading', value)}
+                    />
                     <div className="mx-auto mt-4 h-1 w-24 bg-slate-300" />
-                    <p className="mx-auto mt-6 max-w-2xl text-slate-600">Feel free to contact me.</p>
+                    <EditableText
+                        as="p"
+                        className="mx-auto mt-6 max-w-2xl text-slate-600"
+                        value={contactLead}
+                        placeholder="Feel free to contact me."
+                        onCommit={(value) => commitMeta('contactLead', value)}
+                    />
+
+                    {isEditable && (
+                        <div className="mx-auto mt-6 grid max-w-3xl gap-3 text-left sm:grid-cols-3">
+                            <input
+                                type="text"
+                                value={contactEmail}
+                                onChange={(e) => commitMeta('contactEmail', e.target.value)}
+                                placeholder="Email"
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                            />
+                            <input
+                                type="text"
+                                value={linkedinUrl}
+                                onChange={(e) => commitMeta('linkedinUrl', e.target.value)}
+                                placeholder="LinkedIn URL"
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                            />
+                            <input
+                                type="text"
+                                value={githubUrl}
+                                onChange={(e) => commitMeta('githubUrl', e.target.value)}
+                                placeholder="GitHub URL"
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                            />
+                        </div>
+                    )}
 
                     <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
                         <a
@@ -3042,7 +3312,12 @@ const BtechMechClassicTemplate = ({
                             className="inline-flex items-center gap-2 rounded-full bg-[#7372dd] px-5 py-3 text-sm font-semibold text-white hover:bg-[#6261d2]"
                         >
                             <Mail size={16} />
-                            <span>{contactEmail}</span>
+                            <EditableText
+                                as="span"
+                                value={contactEmail}
+                                placeholder="contact@example.com"
+                                onCommit={(value) => commitMeta('contactEmail', value)}
+                            />
                         </a>
                         {linkedinUrl && (
                             <a
@@ -3074,8 +3349,20 @@ const BtechMechClassicTemplate = ({
                             <div className="mt-5 space-y-3">
                                 {certifications.map((item, index) => (
                                     <div key={`${item.name || 'cert'}-${index}`} className="rounded-2xl border border-slate-200 px-4 py-3">
-                                        <div className="font-semibold text-slate-700">{item.name || `Certification ${index + 1}`}</div>
-                                        <div className="text-sm text-slate-500">{item.issuer || 'Issuer'}</div>
+                                        <EditableText
+                                            as="div"
+                                            className="font-semibold text-slate-700"
+                                            value={item.name}
+                                            placeholder={`Certification ${index + 1}`}
+                                            onCommit={(value) => updateCertificationItem(index, 'name', value)}
+                                        />
+                                        <EditableText
+                                            as="div"
+                                            className="text-sm text-slate-500"
+                                            value={item.issuer}
+                                            placeholder="Issuer"
+                                            onCommit={(value) => updateCertificationItem(index, 'issuer', value)}
+                                        />
                                     </div>
                                 ))}
                             </div>

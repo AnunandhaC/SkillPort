@@ -5,7 +5,7 @@ import { User, Mail, Lock, GraduationCap, Building2 } from 'lucide-react';
 import clsx from 'clsx';
 
 const Signup = () => {
-    const { signupStudent, login } = useAuth();
+    const { signupStudent, logout } = useAuth();
     const navigate = useNavigate();
     const [program, setProgram] = useState(''); // 'barch' | 'btech'
     const [email, setEmail] = useState('');
@@ -39,22 +39,12 @@ const Signup = () => {
         }
 
         try {
-            const signupData = await signupStudent({ email, password, name, program });
-
-            if (signupData?.session) {
-                navigate('/student-dashboard', { replace: true });
-                return;
-            }
-
-            try {
-                await login(email.trim(), password);
-                navigate('/student-dashboard', { replace: true });
-            } catch {
-                navigate('/', {
-                    replace: true,
-                    state: { message: 'Account created successfully. Please sign in.' },
-                });
-            }
+            await signupStudent({ email, password, name, program });
+            await logout();
+            navigate('/', {
+                replace: true,
+                state: { successMessage: 'Account created successfully' },
+            });
         } catch (signupError) {
             setError(signupError.message || 'Failed to create account.');
         } finally {

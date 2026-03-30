@@ -1,43 +1,38 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthProvider';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
-import { Mail, Lock } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import clsx from 'clsx';
 
 const Login = () => {
-  const { login, user, loading, logout } = useAuth();
+  const { login, logout, user, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [selectedRole, setSelectedRole] = useState('student');
+  const [pendingRole, setPendingRole] = useState(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
-  const navigateToRole = (role) => {
-    if (role === 'student') navigate('/student-dashboard', { replace: true });
-    else if (role === 'faculty') navigate('/faculty-dashboard', { replace: true });
-    else if (role === 'admin') navigate('/admin-dashboard', { replace: true });
-    else navigate('/', { replace: true });
-  };
+  useEffect(() => {
+    const nextMessage = location.state?.successMessage;
+    if (!nextMessage) return;
+
+    setSuccessMessage(nextMessage);
+    navigate(location.pathname, { replace: true, state: {} });
+  }, [location.pathname, location.state, navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
-    setSuccess('');
-    setSubmitting(true);
+    setSuccessMessage('');
+    setPendingRole(selectedRole);
     try {
-      const result = await login(email.trim(), password);
-      const role = result?.resolvedUser?.role || selectedRole || 'student';
-      if (role !== selectedRole) {
-        setError(`This account is registered as ${role}. Please choose ${role} sign in.`);
-        await logout();
-        return;
-      }
-
-      navigateToRole(role);
+      await login(email.trim(), password);
     } catch (err) {
+      setPendingRole(null);
       const msg = err?.message || 'Failed to sign in';
       if (msg.toLowerCase().includes('email not confirmed')) {
         setError('Email confirmation is enabled in Supabase. Disable it in Authentication > Providers > Email > Confirm email.');
@@ -49,19 +44,26 @@ const Login = () => {
     }
   };
 
-  // Redirect after profile (user) is loaded from Supabase
   useEffect(() => {
     if (loading || !user) return;
     navigateToRole(user.role);
   }, [user, loading, navigate]);
 
-  useEffect(() => {
-    const msg = location?.state?.message;
-    if (msg) {
-      setSuccess(String(msg));
-      navigate(location.pathname, { replace: true, state: {} });
+    if (pendingRole && user.role !== pendingRole) {
+      logout().catch((logoutError) => {
+        console.error('Logout after role mismatch failed:', logoutError);
+      });
+      setError(`This account is registered as ${user.role}. Please choose ${user.role} sign in.`);
+      setPendingRole(null);
+      return;
     }
-  }, [location.state, location.pathname, navigate]);
+
+    setPendingRole(null);
+    if (user.role === 'student') navigate('/student-dashboard');
+    else if (user.role === 'faculty') navigate('/faculty-dashboard');
+    else if (user.role === 'admin') navigate('/admin-dashboard');
+    else navigate('/');
+  }, [logout, navigate, pendingRole, user]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
@@ -110,15 +112,24 @@ const Login = () => {
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 required
                 name="login_password"
                 autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2.5 pl-10 pr-4 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
-                placeholder="••••••••"
+                className="w-full bg-slate-900/50 border border-slate-700 rounded-lg py-2.5 pl-10 pr-12 text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all"
+                placeholder="Password"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                title={showPassword ? 'Hide password' : 'Show password'}
+              >
+                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
             </div>
             <p className="mt-1 text-right">
               <Link
@@ -132,14 +143,14 @@ const Login = () => {
         </div>
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
-        {success && <p className="text-green-400 text-sm">{success}</p>}
+        {successMessage && <p className="text-green-400 text-sm">{successMessage}</p>}
 
         <button
           type="submit"
-          disabled={submitting || loading}
+          disabled={loading}
           className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-semibold py-3 rounded-lg shadow-lg shadow-blue-500/25 transition-all duration-300 transform hover:-translate-y-0.5"
         >
-          {submitting || loading ? 'Signing In...' : 'Sign In'}
+          {loading ? 'Signing In...' : 'Sign In'}
         </button>
       </form>
 
