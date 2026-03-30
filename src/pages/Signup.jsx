@@ -21,8 +21,11 @@ const Signup = () => {
         setError('');
         setSuccess('');
         setSubmitting(true);
+        const trimmedEmail = email.trim();
+        const trimmedName = name.trim();
 
-        if (!email || !name || !program) {
+        if (!trimmedEmail || !trimmedName || !program) {
+            setError('Program, full name, and email are required.');
             setSubmitting(false);
             return;
         }

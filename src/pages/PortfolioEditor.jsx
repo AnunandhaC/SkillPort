@@ -424,6 +424,7 @@ const PortfolioEditor = () => {
             const pages = Array.isArray(prev?.meta?.templatePages) ? prev.meta.templatePages : [];
             return {
                 ...prev,
+                about: '',
                 meta: {
                     ...(prev.meta || {}),
                     templatePages: [

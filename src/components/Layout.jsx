@@ -14,6 +14,23 @@ const Layout = () => {
         return <Navigate to="/" replace />;
     }
 
+    if (user) {
+        const path = location.pathname || '';
+        const isStudentPath = path.startsWith('/student-dashboard') || path.startsWith('/portfolio-editor') || path.startsWith('/resume-builder') || path.startsWith('/design-lab');
+        const isFacultyPath = path.startsWith('/faculty-dashboard') || path.startsWith('/faculty-evaluation');
+        const isAdminPath = path.startsWith('/admin-dashboard');
+
+        if (user.role === 'student' && (isFacultyPath || isAdminPath)) {
+            return <Navigate to="/student-dashboard" replace />;
+        }
+        if (user.role === 'faculty' && (isStudentPath || isAdminPath)) {
+            return <Navigate to="/faculty-dashboard" replace />;
+        }
+        if (user.role === 'admin' && (isStudentPath || isFacultyPath)) {
+            return <Navigate to="/admin-dashboard" replace />;
+        }
+    }
+
     return (
         <div className="min-h-screen flex flex-col">
             <Navbar />

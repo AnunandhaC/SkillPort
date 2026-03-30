@@ -93,9 +93,9 @@ export const AuthProvider = ({ children }) => {
 
           setUserSafe({
             id: profile.id,
-            email: profile.email,
-            role: profile.role,
-            name: profile.full_name,
+            email: profile.email || fallback.email,
+            role: profile.role || fallback.role,
+            name: profile.full_name || fallback.name,
             program: resolvedProgram,
           });
         } else {
@@ -171,12 +171,16 @@ export const AuthProvider = ({ children }) => {
   const signupStudent = async ({ email, password, name, program }) => {
     setLoading(true);
     try {
+      const trimmedEmail = String(email || '').trim();
+      const trimmedName = String(name || '').trim();
+      const fallbackName = trimmedName || trimmedEmail.split('@')[0] || 'User';
+
       const { data, error } = await supabase.auth.signUp({
-        email,
+        email: trimmedEmail,
         password,
         options: {
           data: {
-            full_name: name,
+            full_name: fallbackName,
             role: 'student',
             program,
           },
@@ -193,8 +197,8 @@ export const AuthProvider = ({ children }) => {
           .upsert(
             {
               id: userId,
-              email,
-              full_name: name,
+              email: trimmedEmail,
+              full_name: fallbackName,
               role: 'student',
               program: program || null,
             },
@@ -204,11 +208,6 @@ export const AuthProvider = ({ children }) => {
           console.error('Profile save failed (check profiles table + RLS):', profileError);
           throw new Error(profileError.message || 'Account created but profile could not be saved. Please contact support.');
         }
-      }
-
-      if (data?.session && data?.user) {
-        const resolvedUser = await resolveProfileUser(data.user, 'student');
-        if (resolvedUser) setUser(resolvedUser);
       }
 
       return data;
