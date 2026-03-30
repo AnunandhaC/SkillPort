@@ -5,7 +5,7 @@ import { User, Mail, Lock, GraduationCap, Building2 } from 'lucide-react';
 import clsx from 'clsx';
 
 const Signup = () => {
-    const { signupStudent } = useAuth();
+    const { signupStudent, login } = useAuth();
     const navigate = useNavigate();
     const [program, setProgram] = useState(''); // 'barch' | 'btech'
     const [email, setEmail] = useState('');
@@ -13,27 +13,52 @@ const Signup = () => {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+    const [submitting, setSubmitting] = useState(false);
 
     const handleSignup = async (e) => {
         e.preventDefault();
         setError('');
+        setSuccess('');
+        setSubmitting(true);
 
-        if (!email || !name || !program) return;
+        if (!email || !name || !program) {
+            setSubmitting(false);
+            return;
+        }
         if (!password) {
             setError('Password is required.');
+            setSubmitting(false);
             return;
         }
 
         if (password !== confirmPassword) {
             setError('Passwords do not match.');
+            setSubmitting(false);
             return;
         }
 
         try {
-            await signupStudent({ email, password, name, program });
-            navigate('/', { replace: true });
+            const signupData = await signupStudent({ email, password, name, program });
+
+            if (signupData?.session) {
+                navigate('/student-dashboard', { replace: true });
+                return;
+            }
+
+            try {
+                await login(email.trim(), password);
+                navigate('/student-dashboard', { replace: true });
+            } catch {
+                navigate('/', {
+                    replace: true,
+                    state: { message: 'Account created successfully. Please sign in.' },
+                });
+            }
         } catch (signupError) {
             setError(signupError.message || 'Failed to create account.');
+        } finally {
+            setSubmitting(false);
         }
     };
 
@@ -144,12 +169,13 @@ const Signup = () => {
                         </div>
 
                         {error && <p className="text-sm text-red-400">{error}</p>}
+                        {success && <p className="text-sm text-green-400">{success}</p>}
                         <button
                             type="submit"
-                            disabled={!program || password !== confirmPassword}
+                            disabled={!program || password !== confirmPassword || submitting}
                             className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:from-blue-600 disabled:hover:to-blue-500 disabled:transform-none text-white font-semibold py-3 rounded-lg shadow-lg shadow-blue-500/25 transition-all duration-300 transform hover:-translate-y-0.5"
                         >
-                            Create Account
+                            {submitting ? 'Creating Account...' : 'Create Account'}
                         </button>
                     </form>
 

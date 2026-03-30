@@ -178,57 +178,37 @@ const PortfolioEditor = () => {
     };
 
     const handleDownloadTemplate = async () => {
-        if (!livePreviewRef.current) {
-            alert('Open Live Editor first.');
-            return;
-        }
-
         try {
             setIsExportingTemplate(true);
-            const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-                import('html2canvas'),
-                import('jspdf'),
-            ]);
-
-            await new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
-
-            const canvas = await html2canvas(livePreviewRef.current, {
-                scale: Math.max(3, Math.ceil((window.devicePixelRatio || 1) * 2)),
-                useCORS: true,
-                backgroundColor: '#ffffff',
-                logging: false,
-                imageTimeout: 0,
-                scrollX: 0,
-                scrollY: -window.scrollY,
-            });
-
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const pageWidth = pdf.internal.pageSize.getWidth();
-            const pageHeight = pdf.internal.pageSize.getHeight();
-            const imgWidth = pageWidth;
-            const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
-            let heightLeft = imgHeight;
-            let position = 0;
-
-            pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-            heightLeft -= pageHeight;
-
-            while (heightLeft > 0) {
-                position = heightLeft - imgHeight;
-                pdf.addPage();
-                pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-                heightLeft -= pageHeight;
+            const payload = buildPortfolioPayload();
+            try {
+                localStorage.setItem(`dps_preview_draft_${user.id}`, JSON.stringify(payload));
+            } catch (e) {
+                console.warn('Could not cache download draft locally:', e);
             }
 
-            const safeName = String(formData?.meta?.fullName || user?.name || 'portfolio')
-                .trim()
-                .replace(/[^\w-]+/g, '-')
-                .replace(/-+/g, '-')
-                .replace(/^-|-$/g, '')
-                || 'portfolio';
-            pdf.save(`${safeName}-${formData.templateId || 'template'}.pdf`);
+            const printUrl = `${window.location.origin}/portfolio/view/${user.id}?preview=1&download=1&t=${Date.now()}`;
+            const iframe = document.createElement('iframe');
+            iframe.style.position = 'fixed';
+            iframe.style.width = '0';
+            iframe.style.height = '0';
+            iframe.style.border = '0';
+            iframe.style.right = '0';
+            iframe.style.bottom = '0';
+            iframe.src = printUrl;
+            document.body.appendChild(iframe);
+            const cleanup = () => {
+                try {
+                    iframe.remove();
+                } catch {
+                    // ignore
+                }
+            };
+            iframe.onload = () => {
+                setTimeout(() => {
+                    cleanup();
+                }, 20000);
+            };
         } catch (error) {
             console.error('Failed to download template PDF:', error);
             alert('Failed to download PDF. Please try again.');
@@ -311,6 +291,10 @@ const PortfolioEditor = () => {
                 ...prev,
                 meta: {
                     ...(prev.meta || {}),
+                    sectionVisibility: {
+                        ...(prev?.meta?.sectionVisibility || {}),
+                        extraPages: true,
+                    },
                     templatePageCopies: [...copies, snapshot],
                 },
             };
@@ -374,6 +358,31 @@ const PortfolioEditor = () => {
 
     const selectedTemplate = visibleTemplates.find((t) => t.id === formData.templateId)
         || templates.find((t) => t.id === formData.templateId);
+    const sectionToggleOptions = (() => {
+        const base = [
+            { key: 'about', label: 'About' },
+            { key: 'skills', label: 'Skills' },
+            { key: 'projects', label: 'Projects' },
+            { key: 'certifications', label: 'Certifications' },
+            { key: 'services', label: 'Services' },
+            { key: 'qualification', label: 'Qualification' },
+            { key: 'testimonials', label: 'Testimonials' },
+            { key: 'contact', label: 'Contact' },
+            { key: 'extraPages', label: 'Extra Pages' },
+        ];
+        const fromTemplate = (Array.isArray(selectedTemplate?.sections) ? selectedTemplate.sections : [])
+            .map((section) => ({
+                key: String(section?.key || ''),
+                label: String(section?.label || section?.key || ''),
+            }))
+            .filter((section) => section.key);
+        const byKey = new Map();
+        [...base, ...fromTemplate].forEach((section) => {
+            if (!section.key || byKey.has(section.key)) return;
+            byKey.set(section.key, section);
+        });
+        return Array.from(byKey.values());
+    })();
 
     const editorShellClass = (() => {
         if (String(formData.templateId || '').startsWith('barch-')) {
@@ -532,14 +541,17 @@ const PortfolioEditor = () => {
                         </div>
 
                         <div className={`${editorShellClass} min-h-[80vh]`}>
-                            <div ref={livePreviewRef} className="rounded-xl overflow-hidden border border-white/10">
+                            <div id="dps-live-template-preview" ref={livePreviewRef} className="rounded-xl overflow-hidden border border-white/10">
+                                <div id="dps-live-template-preview-main">
                                 <PortfolioView
                                     portfolioOverride={buildPortfolioPayload()}
                                     editable
                                     onPortfolioChange={setFormData}
                                     hideFooterBadge
                                     exportMode={isExportingTemplate}
+                                    editorScopeId="dps-live-template-preview-main"
                                 />
+                                </div>
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 <button
@@ -558,140 +570,10 @@ const PortfolioEditor = () => {
                                 </button>
                             </div>
 
-                            <div className="rounded-xl border border-white/15 bg-black/20 p-4 space-y-4">
-                                <h4 className="text-white font-semibold">Template Controls (All Templates)</h4>
-                                <p className="text-xs text-slate-400">Use this for templates where inline editing is limited. These controls also work for templates you add later.</p>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                    <input
-                                        value={formData?.meta?.fullName || ''}
-                                        onChange={(e) => setMeta('fullName', e.target.value)}
-                                        placeholder="Full name"
-                                        className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
-                                    />
-                                    <input
-                                        value={formData?.meta?.role || ''}
-                                        onChange={(e) => setMeta('role', e.target.value)}
-                                        placeholder="Role / title"
-                                        className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
-                                    />
-                                    <input
-                                        value={formData?.meta?.contactEmail || ''}
-                                        onChange={(e) => setMeta('contactEmail', e.target.value)}
-                                        placeholder="Contact email"
-                                        className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
-                                    />
-                                    <input
-                                        value={formData?.about || ''}
-                                        onChange={(e) => setRoot('about', e.target.value)}
-                                        placeholder="About"
-                                        className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
-                                    />
-                                </div>
-
-                                <div className="space-y-2">
-                                    <h5 className="text-sm text-slate-200">Hide/Show Sections</h5>
-                                    <div className="flex flex-wrap gap-2">
-                                        {[
-                                            { key: 'about', label: 'About' },
-                                            { key: 'skills', label: 'Skills' },
-                                            { key: 'projects', label: 'Projects' },
-                                            { key: 'certifications', label: 'Certifications' },
-                                            { key: 'services', label: 'Services' },
-                                            { key: 'qualification', label: 'Qualification' },
-                                            { key: 'testimonials', label: 'Testimonials' },
-                                            { key: 'contact', label: 'Contact' },
-                                            { key: 'extraPages', label: 'Extra Pages' },
-                                        ].map((s) => {
-                                            const visible = formData?.meta?.sectionVisibility?.[s.key] !== false;
-                                            return (
-                                                <button
-                                                    key={s.key}
-                                                    type="button"
-                                                    onClick={() => setSectionVisibility(s.key, !visible)}
-                                                    className={`px-2 py-1 rounded-full text-xs border ${visible ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-800 border-slate-600 text-slate-300'}`}
-                                                >
-                                                    {visible ? `Hide ${s.label}` : `Show ${s.label}`}
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <h5 className="text-sm text-slate-200">Skills</h5>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <input
-                                            value={newSkillText}
-                                            onChange={(e) => setNewSkillText(e.target.value)}
-                                            placeholder="Add skill"
-                                            className="flex-1 bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
-                                        />
-                                        <button type="button" onClick={addSkill} className="px-3 py-2 bg-blue-600 rounded text-white text-sm">Add</button>
-                                    </div>
-                                    <div className="space-y-1">
-                                        {(Array.isArray(formData.skills) ? formData.skills : []).map((s, i) => (
-                                            <div key={`${s}-${i}`} className="grid grid-cols-[1fr_auto] gap-2">
-                                                <input
-                                                    value={s}
-                                                    onChange={(e) => updateSkill(i, e.target.value)}
-                                                    className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
-                                                />
-                                                <button type="button" onClick={() => removeSkill(i)} className="text-red-400 hover:text-red-300">
-                                                    <Trash2 size={14} />
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <h5 className="text-sm text-slate-200">Projects</h5>
-                                        <button type="button" onClick={addProject} className="text-xs px-2 py-1 bg-blue-600 rounded text-white">Add</button>
-                                    </div>
-                                    {(Array.isArray(formData.projects) ? formData.projects : []).map((p, i) => (
-                                        <div key={i} className="grid grid-cols-[1fr_auto] gap-2">
-                                            <input
-                                                value={p.title || ''}
-                                                onChange={(e) => updateProject(i, { title: e.target.value })}
-                                                placeholder="Project title"
-                                                className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
-                                            />
-                                            <button type="button" onClick={() => removeProject(i)} className="text-red-400 hover:text-red-300">
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-
-                                <div className="space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <h5 className="text-sm text-slate-200">Certifications</h5>
-                                        <button type="button" onClick={addCertification} className="text-xs px-2 py-1 bg-blue-600 rounded text-white">Add</button>
-                                    </div>
-                                    {(Array.isArray(formData.certifications) ? formData.certifications : []).map((c, i) => (
-                                        <div key={i} className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
-                                            <input
-                                                value={c.name || ''}
-                                                onChange={(e) => updateCertification(i, { name: e.target.value })}
-                                                placeholder="Certification"
-                                                className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
-                                            />
-                                            <input
-                                                value={c.issuer || ''}
-                                                onChange={(e) => updateCertification(i, { issuer: e.target.value })}
-                                                placeholder="Issuer"
-                                                className="bg-slate-900/60 border border-slate-700 rounded p-2 text-sm text-white"
-                                            />
-                                            <button type="button" onClick={() => removeCertification(i)} className="text-red-400 hover:text-red-300">
-                                                <Trash2 size={14} />
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
+                            <div className="rounded-xl border border-white/15 bg-black/20 p-4">
+                                <p className="text-xs text-slate-300">
+                                    Inline editing is enabled inside the template preview. Click text directly in the template to edit content, and use inline section tools there.
+                                </p>
                             </div>
                         </div>
                     </>

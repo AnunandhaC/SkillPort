@@ -35,6 +35,67 @@ const INITIAL_OPPORTUNITIES = [
     }
 ];
 
+export const DEFAULT_TEMPLATE_SECTIONS = [
+    { key: 'about', label: 'About', enabled: true },
+    { key: 'skills', label: 'Skills', enabled: true },
+    { key: 'projects', label: 'Projects', enabled: true },
+    { key: 'certifications', label: 'Certifications', enabled: true },
+    { key: 'qualification', label: 'Qualification', enabled: true },
+    { key: 'services', label: 'Services', enabled: true },
+    { key: 'testimonials', label: 'Testimonials', enabled: true },
+    { key: 'contact', label: 'Contact', enabled: true },
+    { key: 'extraPages', label: 'Extra Pages', enabled: true },
+    { key: 'portfolio', label: 'Portfolio', enabled: true },
+    { key: 'project', label: 'Project In Mind', enabled: true },
+    { key: 'testimonial', label: 'Testimonial', enabled: true },
+];
+
+const normalizeSectionKey = (value) =>
+    String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+const normalizeTemplateSections = (sections) => {
+    if (!Array.isArray(sections) || sections.length === 0) {
+        return DEFAULT_TEMPLATE_SECTIONS.map((section) => ({ ...section }));
+    }
+
+    const seen = new Set();
+    const normalized = [];
+
+    sections.forEach((raw) => {
+        const key = normalizeSectionKey(raw?.key);
+        if (!key || seen.has(key)) return;
+        seen.add(key);
+
+        const label = String(raw?.label || '')
+            .trim()
+            || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+
+        normalized.push({
+            key,
+            label,
+            enabled: raw?.enabled !== false,
+        });
+    });
+
+    if (normalized.length === 0) {
+        return DEFAULT_TEMPLATE_SECTIONS.map((section) => ({ ...section }));
+    }
+
+    return normalized;
+};
+
+const normalizeTemplate = (template) => ({
+    ...template,
+    baseTemplateId: String(template?.baseTemplateId || template?.id || 'modern').trim() || 'modern',
+    themeColor: String(template?.themeColor || '#2563eb').trim() || '#2563eb',
+    backgroundColor: String(template?.backgroundColor || '').trim(),
+    sections: normalizeTemplateSections(template?.sections),
+});
+
 const INITIAL_TEMPLATES = [
     { id: 'modern', name: 'Modern Minimal', description: 'Clean and whitespace heavy', group: 'general' },
     { id: 'academic', name: 'Academic Professional', description: 'Structured and detailed', group: 'general' },
@@ -50,14 +111,24 @@ const INITIAL_TEMPLATES = [
     { id: 'barch-red', name: 'BArch Red Studio', description: 'Red and white modern architecture portfolio', group: 'barch' },
     { id: 'barch-portfolio-a', name: 'BArch Portfolio Book', description: 'Editorial portfolio style with large project boards', group: 'barch' },
     { id: 'barch-portfolio-b', name: 'BArch Slate Journal', description: 'Dark studio portfolio with timeline and project cards', group: 'barch' }
-];
+].map(normalizeTemplate);
 
 export const DataProvider = ({ children }) => {
     const [portfolios, setPortfolios] = useState({});
     const [reviews, setReviews] = useState([]);
     const [loading, setLoading] = useState(true);
     const [opportunities, setOpportunities] = useState(INITIAL_OPPORTUNITIES);
-    const [templates, setTemplates] = useState(INITIAL_TEMPLATES);
+    const [templates, setTemplates] = useState(() => {
+        try {
+            const stored = localStorage.getItem('dps_templates');
+            if (!stored) return INITIAL_TEMPLATES;
+            const parsed = JSON.parse(stored);
+            return Array.isArray(parsed) && parsed.length > 0 ? parsed.map(normalizeTemplate) : INITIAL_TEMPLATES;
+        } catch (error) {
+            console.error('Failed to parse templates from localStorage:', error);
+            return INITIAL_TEMPLATES;
+        }
+    });
     const [users, setUsers] = useState([]); // Mock user registry for Admin
 
     const loadPortfolios = useCallback(async () => {
@@ -115,6 +186,10 @@ export const DataProvider = ({ children }) => {
             clearInterval(pollId);
         };
     }, [loadPortfolios]);
+
+    useEffect(() => {
+        localStorage.setItem('dps_templates', JSON.stringify(templates));
+    }, [templates]);
 
     const savePortfolio = async (studentId, data) => {
         if (!studentId) throw new Error('Missing student id.');
@@ -239,6 +314,84 @@ export const DataProvider = ({ children }) => {
 
     const getAllPortfolios = () => Object.entries(portfolios).map(([id, data]) => ({ studentId: id, ...data }));
 
+    const createTemplate = (templateInput) => {
+        const name = String(templateInput?.name || '').trim();
+        const description = String(templateInput?.description || '').trim();
+        const group = String(templateInput?.group || 'general').trim() || 'general';
+        const branch = templateInput?.branch ? String(templateInput.branch).trim().toLowerCase() : undefined;
+        const baseTemplateId = String(templateInput?.baseTemplateId || 'modern').trim() || 'modern';
+        const themeColor = String(templateInput?.themeColor || '#2563eb').trim() || '#2563eb';
+        const backgroundColor = String(templateInput?.backgroundColor || '').trim();
+        const requestedId = normalizeSectionKey(templateInput?.id || name);
+        const id = requestedId || `template_${Date.now()}`;
+
+        if (!name) throw new Error('Template name is required.');
+        if (!description) throw new Error('Template description is required.');
+
+        let duplicate = false;
+        setTemplates((prev) => {
+            duplicate = prev.some((template) => template.id === id);
+            if (duplicate) return prev;
+            return [
+                ...prev,
+                normalizeTemplate({
+                    id,
+                    name,
+                    description,
+                    group,
+                    branch,
+                    baseTemplateId,
+                    themeColor,
+                    backgroundColor,
+                    sections: templateInput?.sections,
+                }),
+            ];
+        });
+
+        if (duplicate) {
+            throw new Error('A template with the same id already exists. Choose a different template name or id.');
+        }
+    };
+
+    const updateTemplate = (templateId, updates) => {
+        if (!templateId) throw new Error('Template id is required.');
+
+        let found = false;
+        setTemplates((prev) =>
+            prev.map((template) => {
+                if (template.id !== templateId) return template;
+                found = true;
+                return normalizeTemplate({
+                    ...template,
+                    ...updates,
+                    id: template.id,
+                });
+            })
+        );
+
+        if (!found) {
+            throw new Error('Template not found.');
+        }
+    };
+
+    const removeTemplate = (templateId) => {
+        if (!templateId) throw new Error('Template id is required.');
+
+        let found = false;
+        setTemplates((prev) => {
+            const next = prev.filter((template) => {
+                const keep = template.id !== templateId;
+                if (!keep) found = true;
+                return keep;
+            });
+            return next;
+        });
+
+        if (!found) {
+            throw new Error('Template not found.');
+        }
+    };
+
     // Helper for UC2: Suggestions
     const analyzePortfolio = (portfolio) => {
         const suggestions = [];
@@ -263,6 +416,9 @@ export const DataProvider = ({ children }) => {
             savePortfolio,
             refreshPortfolios: loadPortfolios,
             addReview,
+            createTemplate,
+            updateTemplate,
+            removeTemplate,
             getStudentPortfolio,
             getAllPortfolios,
             analyzePortfolio // Exposed for UC2

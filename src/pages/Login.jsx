@@ -1,33 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthProvider';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Mail, Lock } from 'lucide-react';
 import clsx from 'clsx';
 
 const Login = () => {
-  const { login, user } = useAuth();
+  const { login, user, loading, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [selectedRole, setSelectedRole] = useState('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+
+  const navigateToRole = (role) => {
+    if (role === 'student') navigate('/student-dashboard', { replace: true });
+    else if (role === 'faculty') navigate('/faculty-dashboard', { replace: true });
+    else if (role === 'admin') navigate('/admin-dashboard', { replace: true });
+    else navigate('/', { replace: true });
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
+    setSubmitting(true);
     try {
       const result = await login(email.trim(), password);
-      const role = result?.user?.user_metadata?.role || 'student';
-
+      const role = result?.resolvedUser?.role || selectedRole || 'student';
       if (role !== selectedRole) {
         setError(`This account is registered as ${role}. Please choose ${role} sign in.`);
+        await logout();
         return;
       }
 
-      if (role === 'student') navigate('/student-dashboard', { replace: true });
-      else if (role === 'faculty') navigate('/faculty-dashboard', { replace: true });
-      else if (role === 'admin') navigate('/admin-dashboard', { replace: true });
-      else navigate('/', { replace: true });
+      navigateToRole(role);
     } catch (err) {
       const msg = err?.message || 'Failed to sign in';
       if (msg.toLowerCase().includes('email not confirmed')) {
@@ -35,18 +44,24 @@ const Login = () => {
       } else {
         setError(msg);
       }
+    } finally {
+      setSubmitting(false);
     }
   };
 
   // Redirect after profile (user) is loaded from Supabase
   useEffect(() => {
-    if (!user) return;
+    if (loading || !user) return;
+    navigateToRole(user.role);
+  }, [user, loading, navigate]);
 
-    if (user.role === 'student') navigate('/student-dashboard');
-    else if (user.role === 'faculty') navigate('/faculty-dashboard');
-    else if (user.role === 'admin') navigate('/admin-dashboard');
-    else navigate('/');
-  }, [user, navigate]);
+  useEffect(() => {
+    const msg = location?.state?.message;
+    if (msg) {
+      setSuccess(String(msg));
+      navigate(location.pathname, { replace: true, state: {} });
+    }
+  }, [location.state, location.pathname, navigate]);
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
@@ -117,12 +132,14 @@ const Login = () => {
         </div>
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
+        {success && <p className="text-green-400 text-sm">{success}</p>}
 
         <button
           type="submit"
+          disabled={submitting || loading}
           className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-semibold py-3 rounded-lg shadow-lg shadow-blue-500/25 transition-all duration-300 transform hover:-translate-y-0.5"
         >
-          Sign In
+          {submitting || loading ? 'Signing In...' : 'Sign In'}
         </button>
       </form>
 

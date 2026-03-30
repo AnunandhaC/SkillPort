@@ -3,17 +3,25 @@ import { useLocation, useParams } from 'react-router-dom';
 import { useData } from '../context/DataProvider';
 import { Github, Linkedin, Mail, Menu, X, ChevronUp } from 'lucide-react';
 
-const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolioChange = null, hideFooterBadge = false, suppressTemplateCopies = false, exportMode = false }) => {
+const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolioChange = null, hideFooterBadge = false, suppressTemplateCopies = false, exportMode = false, editorScopeId = '' }) => {
     const { id } = useParams();
     const location = useLocation();
-    const { getStudentPortfolio, loading } = useData();
+    const { getStudentPortfolio, templates, loading } = useData();
     let portfolio = portfolioOverride || getStudentPortfolio(id);
+    let previewTemplateConfig = null;
     const isEditable = Boolean(editable && typeof onPortfolioChange === 'function');
 
     const isPreviewMode = (() => {
         if (portfolioOverride) return false;
         try {
             return new URLSearchParams(location.search).get('preview') === '1';
+        } catch {
+            return false;
+        }
+    })();
+    const isDownloadMode = (() => {
+        try {
+            return new URLSearchParams(location.search).get('download') === '1';
         } catch {
             return false;
         }
@@ -32,6 +40,13 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                     };
                 }
             }
+            const configRaw = localStorage.getItem(`dps_preview_template_config_${id}`);
+            if (configRaw) {
+                const parsedConfig = JSON.parse(configRaw);
+                if (parsedConfig && typeof parsedConfig === 'object') {
+                    previewTemplateConfig = parsedConfig;
+                }
+            }
         } catch (e) {
             console.warn('Failed to load preview draft:', e);
         }
@@ -40,9 +55,52 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
     if (!portfolioOverride && loading) return <div className="text-white text-center mt-20">Loading portfolio...</div>;
     if (!portfolio) return <div className="text-white text-center mt-20">Portfolio not found or not published.</div>;
 
-    const { about, skills, projects, certifications, templateId } = portfolio;
+    const {
+        about,
+        skills,
+        projects,
+        certifications,
+        templateId: rawTemplateId,
+    } = portfolio;
     const globalMeta = portfolio?.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
-    const sectionVisibility = {
+    const currentTemplate = previewTemplateConfig || (Array.isArray(templates)
+        ? templates.find((template) => template.id === rawTemplateId)
+        : null);
+    const renderableTemplateIds = new Set([
+        'modern',
+        'creative',
+        'barch-red',
+        'btech',
+        'btech-bedimcode-1',
+        'btech-bedimcode-2',
+        'btech-cs',
+        'btech-cs-unicons',
+        'btech-cs-devfolio',
+        'btech-cs-systems',
+        'btech-cs-ml',
+        'btech-mech',
+        'btech-mech-wajiha',
+        'btech-eee',
+        'btech-ece',
+        'btech-robo',
+        'barch-ece',
+        'barch-robo',
+        'barch-portfolio-a',
+        'barch-portfolio-b',
+        'academic',
+    ]);
+    const templateId = (() => {
+        const requested = String(rawTemplateId || '').trim();
+        if (requested && renderableTemplateIds.has(requested)) return requested;
+
+        const configuredBase = String(currentTemplate?.baseTemplateId || '').trim();
+        if (configuredBase && renderableTemplateIds.has(configuredBase)) return configuredBase;
+
+        return 'modern';
+    })();
+    const accentColor = String(currentTemplate?.themeColor || '#2563eb').trim() || '#2563eb';
+    const backgroundColor = String(globalMeta?.templateBackgroundColor || currentTemplate?.backgroundColor || '').trim();
+    const baseSectionVisibility = {
         about: true,
         skills: true,
         projects: true,
@@ -50,11 +108,68 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         services: true,
         qualification: true,
         testimonials: true,
+        testimonial: true,
         contact: true,
         extraPages: true,
+        portfolio: true,
+        project: true,
+    };
+    const templateSectionDefaults = (() => {
+        if (!Array.isArray(currentTemplate?.sections) || currentTemplate.sections.length === 0) {
+            return baseSectionVisibility;
+        }
+
+        const fromTemplate = Object.keys(baseSectionVisibility).reduce((acc, key) => {
+            acc[key] = false;
+            return acc;
+        }, {});
+
+        currentTemplate.sections.forEach((section) => {
+            const key = String(section?.key || '').trim();
+            if (!key) return;
+            fromTemplate[key] = section?.enabled !== false;
+        });
+        return fromTemplate;
+    })();
+    const sectionVisibility = {
+        ...templateSectionDefaults,
         ...(globalMeta.sectionVisibility || {}),
     };
     const showSection = (key) => sectionVisibility[key] !== false;
+    const builtInSectionKeys = new Set([
+        'about',
+        'skills',
+        'projects',
+        'certifications',
+        'services',
+        'qualification',
+        'testimonials',
+        'testimonial',
+        'contact',
+        'extraPages',
+        'portfolio',
+        'project',
+    ]);
+    const customSectionLabels = globalMeta?.customSectionLabels || {};
+    const templateCustomSections = (Array.isArray(currentTemplate?.sections) ? currentTemplate.sections : [])
+        .filter((section) => section?.key && !builtInSectionKeys.has(section.key))
+        .map((section) => ({
+            key: String(section.key),
+            label: String(customSectionLabels?.[String(section.key)] || section.label || section.key),
+        }));
+    const metaCustomSections = Object.keys(globalMeta?.customSections || {})
+        .filter((key) => key && !builtInSectionKeys.has(key))
+        .map((key) => ({
+            key,
+            label: String(customSectionLabels?.[key] || key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())),
+        }));
+    const customTemplateSections = [...templateCustomSections, ...metaCustomSections]
+        .reduce((acc, section) => {
+            if (acc.some((s) => s.key === section.key)) return acc;
+            acc.push(section);
+            return acc;
+        }, [])
+        .filter((section) => showSection(section.key));
     const templateStyle = portfolio?.meta?.templateStyle || {};
     const templatePageCopies = Array.isArray(portfolio?.meta?.templatePageCopies) ? portfolio.meta.templatePageCopies : [];
     const fontFamilyMap = {
@@ -79,6 +194,10 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             showSection('services') ? '' : '.services.section{display:none !important;}',
             showSection('testimonials') ? '' : '.testimonial.section{display:none !important;}',
             showSection('contact') ? '' : '#contact,.contact.section{display:none !important;}',
+            'footer,.footer{display:none !important;}',
+            '.dps-extra-page header:first-of-type{display:none !important;}',
+            '.dps-extra-page #home{display:none !important;}',
+            '.dps-extra-page section:first-of-type{display:none !important;}',
         ].join('\n');
 
         const id = 'dps-section-visibility-style';
@@ -91,7 +210,8 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         styleEl.textContent = css;
 
         // Fallback: hide sections by heading keywords for templates without semantic ids/classes.
-        const sections = Array.from(document.querySelectorAll('section'));
+        const scope = (editorScopeId && document.getElementById(editorScopeId)) || document;
+        const sections = Array.from(scope.querySelectorAll('section'));
         sections.forEach((sec) => {
             if (sec.dataset.dpsHiddenByFilter === '1') {
                 sec.style.display = '';
@@ -137,6 +257,16 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         if (!showSection('contact')) {
             hideWhere((sec) => /(contact|reach me)/.test(headingText(sec)));
         }
+        const customHiddenKeys = Object.entries(sectionVisibility)
+            .filter(([key, visible]) =>
+                visible === false
+                && !['about', 'skills', 'projects', 'certifications', 'qualification', 'services', 'testimonials', 'testimonial', 'contact'].includes(key)
+            )
+            .map(([key]) => key);
+        customHiddenKeys.forEach((key) => {
+            const keyRegex = new RegExp(`\\b${key.replace(/_/g, '[\\s_-]*')}\\b`, 'i');
+            hideWhere((sec) => keyRegex.test(headingText(sec)));
+        });
 
         return () => {
             const existing = document.getElementById(id);
@@ -157,8 +287,89 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         sectionVisibility.services,
         sectionVisibility.qualification,
         sectionVisibility.testimonials,
+        sectionVisibility.testimonial,
         sectionVisibility.contact,
+        sectionVisibility.portfolio,
+        sectionVisibility.project,
+        sectionVisibility.extraPages,
+        editorScopeId,
     ]);
+
+    useEffect(() => {
+        const id = 'dps-template-accent-style';
+        let styleEl = document.getElementById(id);
+        if (!styleEl) {
+            styleEl = document.createElement('style');
+            styleEl.id = id;
+            document.head.appendChild(styleEl);
+        }
+        styleEl.textContent = `
+            .text-blue-700,.text-blue-600,.text-blue-500,.text-blue-400,.text-blue-300,.text-cyan-300 {
+                color: ${accentColor} !important;
+            }
+            .text-\\[\\#7372dd\\],.text-\\[\\#6261d2\\],.text-\\[\\#0077b5\\] {
+                color: ${accentColor} !important;
+            }
+            .bg-blue-600,.bg-blue-500,.bg-indigo-600,.bg-cyan-600 {
+                background-color: ${accentColor} !important;
+            }
+            .bg-\\[\\#7372dd\\],.bg-\\[\\#6261d2\\],.bg-\\[\\#0077b5\\] {
+                background-color: ${accentColor} !important;
+            }
+            .from-\\[\\#7372dd\\],.to-\\[\\#7372dd\\],.from-\\[\\#6261d2\\],.to-\\[\\#6261d2\\] {
+                --tw-gradient-from: ${accentColor} var(--tw-gradient-from-position) !important;
+                --tw-gradient-to: ${accentColor} var(--tw-gradient-to-position) !important;
+            }
+            .border-blue-600,.border-blue-500,.border-blue-400,.border-blue-300 {
+                border-color: ${accentColor} !important;
+            }
+            .border-\\[\\#7372dd\\],.border-\\[\\#6261d2\\],.border-\\[\\#0077b5\\] {
+                border-color: ${accentColor} !important;
+            }
+            a:hover {
+                color: ${accentColor} !important;
+            }
+        `;
+        return () => {
+            const existing = document.getElementById(id);
+            if (existing) existing.remove();
+        };
+    }, [accentColor]);
+
+    useEffect(() => {
+        const isHexColor = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(backgroundColor);
+        if (!isHexColor) return undefined;
+
+        const scope = (editorScopeId && document.getElementById(editorScopeId)) || document;
+        const roots = Array.from(scope.querySelectorAll('.min-h-screen'));
+        const touched = [];
+
+        roots.forEach((root) => {
+            const el = root;
+            touched.push({ el, prev: el.style.backgroundColor });
+            el.style.backgroundColor = backgroundColor;
+        });
+
+        return () => {
+            touched.forEach(({ el, prev }) => {
+                el.style.backgroundColor = prev || '';
+            });
+        };
+    }, [backgroundColor, templateId, isEditable, editorScopeId]);
+
+    useEffect(() => {
+        if (!isDownloadMode) return undefined;
+        const timer = window.setTimeout(() => {
+            window.print();
+        }, 500);
+        const closeTimer = window.setTimeout(() => {
+            window.close();
+        }, 1200);
+        return () => {
+            window.clearTimeout(timer);
+            window.clearTimeout(closeTimer);
+        };
+    }, [isDownloadMode]);
 
     const commitRoot = (key, value) => {
         if (!isEditable) return;
@@ -168,6 +379,20 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
     const commitMeta = (key, value) => {
         if (!isEditable) return;
         onPortfolioChange((prev) => ({ ...prev, meta: { ...(prev.meta || {}), [key]: value } }));
+    };
+
+    const setSectionVisibilityInline = (key, visible) => {
+        if (!isEditable) return;
+        onPortfolioChange((prev) => ({
+            ...prev,
+            meta: {
+                ...(prev.meta || {}),
+                sectionVisibility: {
+                    ...(prev?.meta?.sectionVisibility || {}),
+                    [key]: visible,
+                },
+            },
+        }));
     };
 
     const commitProject = (index, key, value) => {
@@ -318,7 +543,6 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             <Tag
                 contentEditable
                 suppressContentEditableWarning
-                onInput={(e) => onCommit(e.currentTarget.textContent || '')}
                 onBlur={(e) => onCommit(e.currentTarget.textContent || '')}
                 className={`${className} outline-none rounded px-1 -mx-1 hover:bg-black/10`}
             >
@@ -330,11 +554,90 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
     // Tiny "Made with" banner
     const Footer = () => (
         <>
+            {customTemplateSections.length > 0 && (
+                <section className="mx-auto mt-10 max-w-6xl space-y-4 px-6">
+                    {customTemplateSections.map((section) => {
+                        const sectionKey = String(section.key);
+                        const sectionLabel = String(section.label || sectionKey).trim() || sectionKey;
+                        const content = String(globalMeta?.customSections?.[sectionKey] || '');
+                        return (
+                            <article
+                                key={sectionKey}
+                                id={sectionKey}
+                                className="rounded-2xl border border-slate-300 bg-white p-6 text-slate-800 shadow-sm"
+                            >
+                                <EditableText
+                                    as="h3"
+                                    className="text-xl font-semibold"
+                                    value={sectionLabel}
+                                    placeholder="Section Title"
+                                    onCommit={(value) => {
+                                        if (!isEditable) return;
+                                        onPortfolioChange((prev) => ({
+                                            ...prev,
+                                            meta: {
+                                                ...(prev.meta || {}),
+                                                customSectionLabels: {
+                                                    ...(prev?.meta?.customSectionLabels || {}),
+                                                    [sectionKey]: String(value || '').trim() || sectionLabel,
+                                                },
+                                            },
+                                        }));
+                                    }}
+                                />
+                                <EditableText
+                                    as="p"
+                                    className="mt-3 text-sm text-slate-700"
+                                    value={content}
+                                    placeholder={`Add ${sectionLabel} content`}
+                                    onCommit={(value) => {
+                                        if (!isEditable) return;
+                                        onPortfolioChange((prev) => ({
+                                            ...prev,
+                                            meta: {
+                                                ...(prev.meta || {}),
+                                                customSections: {
+                                                    ...(prev?.meta?.customSections || {}),
+                                                    [sectionKey]: value,
+                                                },
+                                            },
+                                        }));
+                                    }}
+                                />
+                                {isEditable && (
+                                    <button
+                                        type="button"
+                                        data-dps-no-inline-edit="1"
+                                        className="mt-3 text-xs text-red-600 hover:text-red-500"
+                                        onClick={() => {
+                                            onPortfolioChange((prev) => {
+                                                const nextCustom = { ...(prev?.meta?.customSections || {}) };
+                                                delete nextCustom[sectionKey];
+                                                return {
+                                                    ...prev,
+                                                    meta: {
+                                                        ...(prev.meta || {}),
+                                                        customSections: nextCustom,
+                                                        sectionVisibility: {
+                                                            ...(prev?.meta?.sectionVisibility || {}),
+                                                            [sectionKey]: false,
+                                                        },
+                                                    },
+                                                };
+                                            });
+                                        }}
+                                    >
+                                        Remove Section
+                                    </button>
+                                )}
+                            </article>
+                        );
+                    })}
+                </section>
+            )}
             {!suppressTemplateCopies && <TemplateExtraPages />}
             {!hideFooterBadge && (
-                <div className="fixed bottom-4 right-4 bg-black/50 backdrop-blur text-white px-3 py-1 rounded-full text-xs">
-                    Built with Digital Portfolio System
-                </div>
+                null
             )}
         </>
     );
@@ -361,7 +664,8 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         };
 
         const injected = [];
-        const sections = Array.from(document.querySelectorAll('section'));
+        const scope = (editorScopeId && document.getElementById(editorScopeId)) || document;
+        const sections = Array.from(scope.querySelectorAll('section'));
         sections.forEach((section) => {
             const heading = section.querySelector('h1,h2,h3,h4,h5,h6');
             if (!heading) return;
@@ -404,7 +708,181 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                 if (heading) delete heading.dataset.dpsInlineAdd;
             });
         };
-    }, [isEditable, templateId, projects?.length, skills?.length, certifications?.length]);
+    }, [isEditable, templateId, projects?.length, skills?.length, certifications?.length, editorScopeId]);
+
+    useEffect(() => {
+        const scope = (editorScopeId && document.getElementById(editorScopeId)) || document.body;
+        if (!scope) return undefined;
+
+        const selectors = 'h1,h2,h3,h4,h5,h6,p,li,blockquote,figcaption,label';
+        const editableNodes = Array.from(scope.querySelectorAll(selectors)).filter((node) => {
+            if (node.closest('[data-dps-no-inline-edit="1"]')) return false;
+            if (node.closest('button,input,textarea,select')) return false;
+            if (node.querySelector('input,textarea,select,button')) return false;
+            const text = String(node.textContent || '').trim();
+            return text.length > 0;
+        });
+
+        const textOverrides = globalMeta?.textOverrides || {};
+        const listeners = [];
+
+        const buildStableTextKey = (node) => {
+            const parts = [];
+            let current = node;
+            while (current && current !== scope) {
+                const parent = current.parentElement;
+                if (!parent) break;
+                const sameTagSiblings = Array.from(parent.children).filter(
+                    (sibling) => sibling.tagName === current.tagName
+                );
+                const siblingIndex = sameTagSiblings.indexOf(current);
+                parts.unshift(`${current.tagName.toLowerCase()}:${siblingIndex}`);
+                current = parent;
+            }
+            return `dps_text_${parts.join('/')}`;
+        };
+
+        editableNodes.forEach((node) => {
+            const key = buildStableTextKey(node);
+            node.setAttribute('data-dps-text-key', key);
+
+            if (typeof textOverrides[key] === 'string' && document.activeElement !== node) {
+                node.innerText = textOverrides[key];
+            }
+
+            if (!isEditable) return;
+            if (node.getAttribute('contenteditable') === 'true') return;
+
+            node.setAttribute('contenteditable', 'true');
+            node.classList.add('outline-none', 'ring-1', 'ring-transparent', 'hover:ring-blue-400/40', 'rounded');
+
+            const onBlur = () => {
+                const value = String(node.innerText || node.textContent || '');
+                onPortfolioChange((prev) => ({
+                    ...prev,
+                    meta: {
+                        ...(prev.meta || {}),
+                        textOverrides: {
+                            ...(prev?.meta?.textOverrides || {}),
+                            [key]: value,
+                        },
+                    },
+                }));
+            };
+            node.addEventListener('blur', onBlur);
+            listeners.push({ node, onBlur });
+        });
+
+        return () => {
+            listeners.forEach(({ node, onBlur }) => {
+                node.removeEventListener('blur', onBlur);
+                node.removeAttribute('contenteditable');
+                node.classList.remove('outline-none', 'ring-1', 'ring-transparent', 'hover:ring-blue-400/40', 'rounded');
+            });
+        };
+    }, [isEditable, templateId, globalMeta?.textOverrides, onPortfolioChange, editorScopeId]);
+
+    useEffect(() => {
+        if (!isEditable) return undefined;
+
+        const scope = (editorScopeId && document.getElementById(editorScopeId)) || document.body;
+        if (!scope) return undefined;
+
+        const existing = scope.querySelector('[data-dps-inline-section-toolbar="1"]');
+        if (existing) existing.remove();
+
+        const toolbar = document.createElement('div');
+        toolbar.setAttribute('data-dps-inline-section-toolbar', '1');
+        toolbar.setAttribute('data-dps-no-inline-edit', '1');
+        toolbar.className = 'mb-4 p-3 rounded-lg border border-blue-300 bg-blue-50 text-slate-800';
+
+        const title = document.createElement('div');
+        title.className = 'text-sm font-semibold mb-2';
+        title.textContent = 'Template Inline Controls';
+        toolbar.appendChild(title);
+
+        const controlsWrap = document.createElement('div');
+        controlsWrap.className = 'flex flex-wrap gap-2';
+
+        const sectionKeys = [
+            'about',
+            'skills',
+            'projects',
+            'certifications',
+            'qualification',
+            'services',
+            'testimonials',
+            'contact',
+            'extraPages',
+            ...customTemplateSections.map((s) => s.key),
+        ];
+        const uniqueSectionKeys = Array.from(new Set(sectionKeys));
+
+        uniqueSectionKeys.forEach((key) => {
+            const visible = showSection(key);
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = visible
+                ? 'px-2 py-1 rounded-full text-xs border border-blue-400 bg-blue-600 text-white'
+                : 'px-2 py-1 rounded-full text-xs border border-slate-400 bg-white text-slate-700';
+            button.textContent = visible ? `Hide ${key}` : `Show ${key}`;
+            button.addEventListener('click', () => setSectionVisibilityInline(key, !visible));
+            controlsWrap.appendChild(button);
+        });
+
+        const addButton = document.createElement('button');
+        addButton.type = 'button';
+        addButton.className = 'px-3 py-1 rounded-full text-xs border border-indigo-400 bg-indigo-600 text-white';
+        addButton.textContent = '+ Add Custom Section';
+        addButton.addEventListener('click', () => {
+            const label = window.prompt('Section label (example: Achievements)');
+            const cleanLabel = String(label || '').trim();
+            if (!cleanLabel) return;
+            const baseKey = cleanLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+            if (!baseKey) return;
+
+            onPortfolioChange((prev) => {
+                const usedKeys = new Set([
+                    ...Array.from(builtInSectionKeys),
+                    ...Object.keys(prev?.meta?.customSections || {}),
+                    ...Object.keys(prev?.meta?.sectionVisibility || {}),
+                ]);
+                let key = baseKey;
+                let suffix = 2;
+                while (usedKeys.has(key)) {
+                    key = `${baseKey}_${suffix}`;
+                    suffix += 1;
+                }
+
+                return {
+                    ...prev,
+                    meta: {
+                        ...(prev?.meta || {}),
+                        sectionVisibility: {
+                            ...(prev?.meta?.sectionVisibility || {}),
+                            [key]: true,
+                        },
+                        customSections: {
+                            ...(prev?.meta?.customSections || {}),
+                            [key]: `Write ${cleanLabel} content here.`,
+                        },
+                        customSectionLabels: {
+                            ...(prev?.meta?.customSectionLabels || {}),
+                            [key]: cleanLabel,
+                        },
+                    },
+                };
+            });
+        });
+        controlsWrap.appendChild(addButton);
+
+        toolbar.appendChild(controlsWrap);
+        scope.prepend(toolbar);
+
+        return () => {
+            if (toolbar.parentElement) toolbar.parentElement.removeChild(toolbar);
+        };
+    }, [isEditable, templateId, customTemplateSections, sectionVisibility, onPortfolioChange, editorScopeId]);
 
     const getProjectImage = (p) => p?.image || p?.imageUrl || '';
     const ProjectAttachments = ({ p, dark = false, showImage = true }) => {
@@ -437,7 +915,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         return (
             <div>
                 {templatePageCopies.map((pagePortfolio, i) => (
-                    <section key={i} className="border-t border-white/10">
+                    <section key={i} className="dps-extra-page border-t border-white/10">
                         <div className="flex justify-end max-w-6xl mx-auto px-6 py-4">
                             {isEditable && (
                                 <button
@@ -449,43 +927,47 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                                 </button>
                             )}
                         </div>
-                        <PortfolioView
-                            portfolioOverride={{
-                                ...pagePortfolio,
-                                meta: {
-                                    ...(pagePortfolio?.meta || {}),
-                                    sectionVisibility: {
-                                        ...(globalMeta.sectionVisibility || {}),
+                        <div id={`dps-live-template-preview-copy-${i}`}>
+                            <PortfolioView
+                                portfolioOverride={{
+                                    ...pagePortfolio,
+                                    meta: {
+                                        ...(pagePortfolio?.meta || {}),
+                                        sectionVisibility: {
+                                            ...(globalMeta.sectionVisibility || {}),
+                                            ...(pagePortfolio?.meta?.sectionVisibility || {}),
+                                        },
                                     },
-                                },
-                            }}
-                            editable={isEditable}
-                            onPortfolioChange={(updater) => {
-                                if (!isEditable) return;
-                                onPortfolioChange((prev) => {
-                                    const copies = Array.isArray(prev?.meta?.templatePageCopies) ? [...prev.meta.templatePageCopies] : [];
-                                    const current = copies[i] || {};
-                                    const next = typeof updater === 'function' ? updater(current) : updater;
-                                    copies[i] = {
-                                        ...next,
-                                        meta: {
-                                            ...(next?.meta || {}),
-                                            templatePageCopies: [],
-                                            templatePages: [],
-                                        },
-                                    };
-                                    return {
-                                        ...prev,
-                                        meta: {
-                                            ...(prev.meta || {}),
-                                            templatePageCopies: copies,
-                                        },
-                                    };
-                                });
-                            }}
-                            hideFooterBadge
-                            suppressTemplateCopies
-                        />
+                                }}
+                                editable={isEditable}
+                                onPortfolioChange={(updater) => {
+                                    if (!isEditable) return;
+                                    onPortfolioChange((prev) => {
+                                        const copies = Array.isArray(prev?.meta?.templatePageCopies) ? [...prev.meta.templatePageCopies] : [];
+                                        const current = copies[i] || {};
+                                        const next = typeof updater === 'function' ? updater(current) : updater;
+                                        copies[i] = {
+                                            ...next,
+                                            meta: {
+                                                ...(next?.meta || {}),
+                                                templatePageCopies: [],
+                                                templatePages: [],
+                                            },
+                                        };
+                                        return {
+                                            ...prev,
+                                            meta: {
+                                                ...(prev.meta || {}),
+                                                templatePageCopies: copies,
+                                            },
+                                        };
+                                    });
+                                }}
+                                hideFooterBadge
+                                suppressTemplateCopies
+                                editorScopeId={`dps-live-template-preview-copy-${i}`}
+                            />
+                        </div>
                     </section>
                 ))}
             </div>
@@ -908,14 +1390,14 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                 { name: 'Project Teammate', text: 'Great collaborator with excellent frontend implementation skills.' },
             ];
         const sectionVisibility = {
-            about: true,
-            skills: true,
-            qualification: true,
-            services: true,
-            portfolio: true,
-            project: true,
-            testimonial: true,
-            contact: true,
+            about: showSection('about'),
+            skills: showSection('skills'),
+            qualification: showSection('qualification'),
+            services: showSection('services'),
+            portfolio: showSection('portfolio') && showSection('projects'),
+            project: showSection('project'),
+            testimonial: showSection('testimonial') && showSection('testimonials'),
+            contact: showSection('contact'),
             ...(meta.uniconsSections || {}),
         };
 
