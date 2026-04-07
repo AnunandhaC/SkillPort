@@ -1,5 +1,7 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { FileText, Plus, Trash2, Download, Save, Eye, X } from 'lucide-react';
+import { useAuth } from '../context/AuthProvider';
+import { useData } from '../context/DataProvider';
 
 // Input components defined outside to prevent recreation on every render
 const InputField = ({ label, value, onChange, placeholder, type = 'text', className = '' }) => (
@@ -28,64 +30,138 @@ const TextAreaField = ({ label, value, onChange, placeholder, rows = 3, classNam
     </div>
 );
 
+const createId = () => Date.now() + Math.random();
+const LOCAL_RESUME_PREFIX = 'dps_resume_builder_';
+
+const getEmptyEducation = () => ({
+    id: createId(),
+    degree: '',
+    university: '',
+    institution: '',
+    location: '',
+    startDate: '',
+    endDate: '',
+    gpa: '',
+    percentage: '',
+    type: 'degree'
+});
+
+const getEmptyCertification = () => ({
+    id: createId(),
+    name: '',
+    issuer: '',
+    startDate: '',
+    endDate: '',
+    description: ''
+});
+
+const getEmptyProject = () => ({
+    id: createId(),
+    title: '',
+    technologies: '',
+    date: '',
+    status: '',
+    description: ''
+});
+
+const createDefaultFormData = (prefill = {}) => ({
+    name: prefill.name || '',
+    phone: '',
+    linkedin: '',
+    email: prefill.email || '',
+    github: '',
+    careerObjective: '',
+    education: [getEmptyEducation()],
+    languages: [],
+    developerTools: [],
+    technologies: [],
+    softSkills: [],
+    certifications: [getEmptyCertification()],
+    projects: [getEmptyProject()]
+});
+
+const normalizeStringArray = (value) =>
+    Array.isArray(value) ? value.map((item) => String(item || '').trim()).filter(Boolean) : [];
+
+const normalizeResumeData = (raw, prefill = {}) => {
+    const base = createDefaultFormData(prefill);
+    const source = raw && typeof raw === 'object' ? raw : {};
+
+    const education = Array.isArray(source.education)
+        ? source.education.map((item) => ({
+            ...getEmptyEducation(),
+            id: createId(),
+            degree: item?.degree || '',
+            university: item?.university || '',
+            institution: item?.institution || '',
+            location: item?.location || '',
+            startDate: item?.startDate || '',
+            endDate: item?.endDate || '',
+            gpa: item?.gpa || '',
+            percentage: item?.percentage || '',
+            type: item?.type || 'degree'
+        }))
+        : [];
+
+    const certifications = Array.isArray(source.certifications)
+        ? source.certifications.map((item) => ({
+            ...getEmptyCertification(),
+            id: createId(),
+            name: item?.name || '',
+            issuer: item?.issuer || '',
+            startDate: item?.startDate || '',
+            endDate: item?.endDate || '',
+            description: item?.description || ''
+        }))
+        : [];
+
+    const projects = Array.isArray(source.projects)
+        ? source.projects.map((item) => ({
+            ...getEmptyProject(),
+            id: createId(),
+            title: item?.title || '',
+            technologies: item?.technologies || '',
+            date: item?.date || '',
+            status: item?.status || '',
+            description: item?.description || ''
+        }))
+        : [];
+
+    return {
+        ...base,
+        name: source.name || base.name,
+        phone: source.phone || '',
+        linkedin: source.linkedin || '',
+        email: source.email || base.email,
+        github: source.github || '',
+        careerObjective: source.careerObjective || '',
+        education: education.length > 0 ? education : [getEmptyEducation()],
+        languages: normalizeStringArray(source.languages),
+        developerTools: normalizeStringArray(source.developerTools),
+        technologies: normalizeStringArray(source.technologies),
+        softSkills: normalizeStringArray(source.softSkills),
+        certifications: certifications.length > 0 ? certifications : [getEmptyCertification()],
+        projects: projects.length > 0 ? projects : [getEmptyProject()]
+    };
+};
+
+const stripInternalIds = (formData) => ({
+    ...formData,
+    education: Array.isArray(formData.education)
+        ? formData.education.map(({ id, ...rest }) => rest)
+        : [],
+    certifications: Array.isArray(formData.certifications)
+        ? formData.certifications.map(({ id, ...rest }) => rest)
+        : [],
+    projects: Array.isArray(formData.projects)
+        ? formData.projects.map(({ id, ...rest }) => rest)
+        : []
+});
+
 const ResumeBuilder = () => {
-    const [formData, setFormData] = useState({
-        // Contact Information
-        name: '',
-        phone: '',
-        linkedin: '',
-        email: '',
-        github: '',
-        
-        // Career Objective
-        careerObjective: '',
-        
-        // Education
-        education: [
-            {
-                id: Date.now(),
-                degree: '',
-                university: '',
-                institution: '',
-                location: '',
-                startDate: '',
-                endDate: '',
-                gpa: '',
-                percentage: '',
-                type: 'degree' // 'degree' or 'intermediate'
-            }
-        ],
-        
-        // Technical Skills
-        languages: [],
-        developerTools: [],
-        technologies: [],
-        softSkills: [],
-        
-        // Training and Certifications
-        certifications: [
-            {
-                id: Date.now() + 1,
-                name: '',
-                issuer: '',
-                startDate: '',
-                endDate: '',
-                description: ''
-            }
-        ],
-        
-        // Projects
-        projects: [
-            {
-                id: Date.now() + 2,
-                title: '',
-                technologies: '',
-                date: '',
-                status: '',
-                description: ''
-            }
-        ]
-    });
+    const { user } = useAuth();
+    const { loading, getStudentPortfolio, savePortfolio } = useData();
+    const [formData, setFormData] = useState(() => createDefaultFormData());
 
     const [currentSkillInput, setCurrentSkillInput] = useState({
         language: '',
@@ -95,7 +171,88 @@ const ResumeBuilder = () => {
     });
 
     const [showPreview, setShowPreview] = useState(false);
-    const resumePreviewRef = useRef(null);
+    const [hydratedForUserId, setHydratedForUserId] = useState(null);
+    const [isSaving, setIsSaving] = useState(false);
+
+    const getLocalResumeKey = useCallback(
+        (userId) => `${LOCAL_RESUME_PREFIX}${userId}`,
+        []
+    );
+
+    useEffect(() => {
+        if (!user?.id || loading || hydratedForUserId === user.id) return;
+
+        const prefill = {
+            name: user.name || '',
+            email: user.email || ''
+        };
+
+        let localDraft = null;
+        try {
+            const rawLocal = window.localStorage.getItem(getLocalResumeKey(user.id));
+            localDraft = rawLocal ? JSON.parse(rawLocal) : null;
+        } catch (error) {
+            console.warn('Failed to parse local resume draft:', error);
+        }
+
+        const portfolio = getStudentPortfolio(user.id);
+        const serverDraft = portfolio?.meta?.resumeBuilder || null;
+        const initial = normalizeResumeData(localDraft || serverDraft, prefill);
+        setFormData(initial);
+        setHydratedForUserId(user.id);
+    }, [user?.id, user?.name, user?.email, loading, hydratedForUserId, getStudentPortfolio, getLocalResumeKey]);
+
+    useEffect(() => {
+        if (!user?.id || hydratedForUserId !== user.id) return;
+        try {
+            window.localStorage.setItem(getLocalResumeKey(user.id), JSON.stringify(stripInternalIds(formData)));
+        } catch (error) {
+            console.warn('Failed to persist local resume draft:', error);
+        }
+    }, [formData, user?.id, hydratedForUserId, getLocalResumeKey]);
+
+    const persistResume = useCallback(
+        async (options = {}) => {
+            if (!user?.id) return false;
+            const { silent = false } = options;
+
+            setIsSaving(true);
+            try {
+                const existing = getStudentPortfolio(user.id) || {};
+                const existingMeta =
+                    existing?.meta && typeof existing.meta === 'object' ? existing.meta : {};
+                const resumeDraft = stripInternalIds(formData);
+
+                await savePortfolio(user.id, {
+                    about: existing.about || '',
+                    skills: Array.isArray(existing.skills) ? existing.skills : [],
+                    projects: Array.isArray(existing.projects) ? existing.projects : [],
+                    certifications: Array.isArray(existing.certifications) ? existing.certifications : [],
+                    templateId: existing.templateId || 'modern',
+                    score: existing.score ?? '',
+                    facultyFeedback: existing.facultyFeedback ?? '',
+                    meta: {
+                        ...existingMeta,
+                        resumeBuilder: resumeDraft,
+                        resumeUpdatedAt: new Date().toISOString()
+                    }
+                });
+
+                window.localStorage.setItem(getLocalResumeKey(user.id), JSON.stringify(resumeDraft));
+                if (!silent) alert('Resume saved successfully.');
+                return true;
+            } catch (error) {
+                console.error('Failed to save resume:', error);
+                if (!silent) {
+                    alert(`Failed to save resume: ${error?.message || 'Unknown error'}`);
+                }
+                return false;
+            } finally {
+                setIsSaving(false);
+            }
+        },
+        [user?.id, formData, getStudentPortfolio, savePortfolio, getLocalResumeKey]
+    );
 
     const updateField = useCallback((field, value) => {
         setFormData(prev => ({ ...prev, [field]: value }));
@@ -153,40 +310,68 @@ const ResumeBuilder = () => {
     };
 
     const generateResumePDF = async () => {
-        const captureRoot = resumePreviewRef.current;
-        if (!captureRoot) return;
+        await persistResume({ silent: true });
 
-        const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
-            import('html2canvas'),
-            import('jspdf'),
-        ]);
+        // Lazy load jsPDF only when needed
+        const { default: jsPDF } = await import('jspdf');
+        const doc = new jsPDF('p', 'pt', 'letter'); // Letter size to match LaTeX
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const margin = 36; // 0.5in in points
+        let yPos = margin + 8; // Start with small top margin
 
-        const canvas = await html2canvas(captureRoot, {
-            scale: 2,
-            useCORS: true,
-            backgroundColor: '#ffffff',
-            windowWidth: Math.max(captureRoot.scrollWidth || 816, 816),
-            windowHeight: Math.max(captureRoot.scrollHeight || 1056, 1056),
-        });
+        // Helper function to add new page if needed
+        const checkPageBreak = (requiredSpace) => {
+            if (yPos + requiredSpace > pageHeight - margin) {
+                doc.addPage();
+                yPos = margin;
+            }
+        };
 
-        const pdf = new jsPDF('p', 'mm', 'a4');
-        const pageWidth = pdf.internal.pageSize.getWidth();
-        const pageHeight = pdf.internal.pageSize.getHeight();
-        const imgWidth = pageWidth;
-        const imgHeight = (canvas.height * imgWidth) / canvas.width;
-        const imageData = canvas.toDataURL('image/png');
+        // Helper to draw horizontal line
+        const drawSectionLine = () => {
+            doc.setLineWidth(0.5);
+            doc.line(margin, yPos, pageWidth - margin, yPos);
+            yPos += 3;
+        };
 
-        let renderedHeight = imgHeight;
-        let position = 0;
+        // Header - Name (centered, large, bold)
+        doc.setFontSize(20);
+        doc.setFont(undefined, 'bold');
+        const name = (formData.name || 'Your Name').toUpperCase();
+        doc.text(name, pageWidth / 2, yPos, { align: 'center' });
+        yPos += 12;
 
-        pdf.addImage(imageData, 'PNG', 0, position, imgWidth, imgHeight);
-        renderedHeight -= pageHeight;
+        // Contact Information (centered, small)
+        doc.setFontSize(9);
+        doc.setFont(undefined, 'normal');
+        const contactParts = [];
+        if (formData.phone) contactParts.push(formData.phone);
+        if (formData.linkedin) contactParts.push(`linkedin.com/in/${formData.linkedin.split('/').pop() || formData.linkedin}`);
+        if (formData.email) contactParts.push(formData.email);
+        if (formData.github) contactParts.push(`github.com/${formData.github.split('/').pop() || formData.github}`);
+        
+        if (contactParts.length > 0) {
+            const contactText = contactParts.join('  ~  ');
+            doc.text(contactText, pageWidth / 2, yPos, { align: 'center' });
+            yPos += 10;
+        }
 
-        while (renderedHeight > 0) {
-            position = renderedHeight - imgHeight;
-            pdf.addPage();
-            pdf.addImage(imageData, 'PNG', 0, position, imgWidth, imgHeight);
-            renderedHeight -= pageHeight;
+        yPos += 3;
+
+        // Career Objective
+        if (formData.careerObjective) {
+            checkPageBreak(30);
+            doc.setFontSize(11);
+            doc.setFont(undefined, 'bold');
+            doc.text('CAREER OBJECTIVE', margin, yPos);
+            yPos += 2;
+            drawSectionLine();
+            doc.setFontSize(9);
+            doc.setFont(undefined, 'normal');
+            const objectiveLines = doc.splitTextToSize(formData.careerObjective, pageWidth - 2 * margin - 20);
+            doc.text(objectiveLines, margin + 10, yPos);
+            yPos += objectiveLines.length * 12 + 8;
         }
 
         const fileName = formData.name ? `${formData.name.replace(/\s+/g, '_')}_Resume.pdf` : 'Resume.pdf';
@@ -382,6 +567,14 @@ const ResumeBuilder = () => {
                     <p className="text-slate-400">Fill in your information to generate a professional resume</p>
                 </div>
                 <div className="flex gap-3">
+                    <button
+                        onClick={() => persistResume()}
+                        disabled={!user?.id || isSaving}
+                        className="flex items-center gap-2 px-6 py-3 bg-emerald-700 hover:bg-emerald-600 disabled:opacity-60 disabled:cursor-not-allowed text-white font-medium rounded-lg transition-all"
+                    >
+                        <Save size={20} />
+                        <span>{isSaving ? 'Saving...' : 'Save Resume'}</span>
+                    </button>
                     <button
                         onClick={() => setShowPreview(true)}
                         className="flex items-center gap-2 px-6 py-3 bg-slate-700 hover:bg-slate-600 text-white font-medium rounded-lg transition-all"

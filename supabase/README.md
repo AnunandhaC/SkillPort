@@ -13,9 +13,9 @@ You must run migrations in order in your Supabase project.
 6. Open `supabase/migrations/002_portfolios.sql` and click **Run**
 7. If you see `record "new" has no field "updated_at"`, run `supabase/migrations/003_fix_portfolios_updated_at.sql`
 8. To allow admin to create faculty accounts from app UI, run `supabase/migrations/004_admin_create_faculty.sql`
-9. To add flexible portfolio metadata, run `supabase/migrations/005_portfolios_meta.sql`
+9. To store template metadata and portfolio editor fields, run `supabase/migrations/005_portfolios_meta.sql`
 10. To let faculty suggestions persist for students, run `supabase/migrations/007_add_faculty_feedback_to_portfolios.sql`
-11. To make faculty evaluation saving robust, run `supabase/migrations/008_faculty_save_evaluation.sql`
+11. To store opportunity eligibility fields directly on portfolios, run `supabase/migrations/008_add_portfolio_eligibility_fields.sql`
 
 This will:
 - Create the `profiles` table

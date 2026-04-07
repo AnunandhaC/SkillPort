@@ -44,7 +44,7 @@ function App() {
                             <Route element={<Layout />}>
                                 <Route path="/student-dashboard" element={<StudentDashboard />} />
                                 <Route path="/faculty-dashboard" element={<FacultyDashboard />} />
-                                <Route path="/faculty-evaluation/:id" element={<FacultyEvaluation />} />
+                                <Route path="/faculty-evaluation/:studentId" element={<FacultyEvaluation />} />
                                 <Route path="/admin-dashboard" element={<AdminDashboard />} />
                                 <Route path="/portfolio-editor" element={<PortfolioEditor />} />
                                 <Route path="/resume-builder" element={<ResumeBuilder />} />

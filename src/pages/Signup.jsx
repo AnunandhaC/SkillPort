@@ -42,15 +42,11 @@ const Signup = () => {
         }
 
         try {
-            await signupStudent({ email: trimmedEmail, password, name: trimmedName, program });
+            await signupStudent({ email, password, name, program });
             await logout();
-            setSuccess('Account created successfully. Please sign in.');
             navigate('/', {
                 replace: true,
-                state: {
-                    message: 'Account created successfully. Please sign in.',
-                    successMessage: 'Account created successfully. Please sign in.',
-                },
+                state: { successMessage: 'Account created successfully' },
             });
         } catch (signupError) {
             setError(signupError.message || 'Failed to create account.');
