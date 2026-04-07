@@ -939,110 +939,77 @@ export const PortfolioDownloader = ({ portfolio }) => {
         const source = getEffectivePortfolio();
         if (!source) return;
 
-        const { default: jsPDF } = await import('jspdf');
-        const doc = new jsPDF('p', 'mm', 'a4');
-        const pageWidth = doc.internal.pageSize.getWidth();
-        const margin = 20;
-        const templateId = source?.templateId || '';
-        const meta = source?.meta && typeof source.meta === 'object' ? source.meta : {};
-        const fullName = meta.fullName || source.studentId || 'Student';
-        const role = meta.role || 'Student Portfolio';
-        const theme = resolveTheme(templateId);
+        const [{ default: html2canvas }, { default: jsPDF }] = await Promise.all([
+            import('html2canvas'),
+            import('jspdf'),
+        ]);
 
-        doc.setFontSize(30);
-        doc.setFont(undefined, 'bold');
-        doc.text(theme.cover, margin, 52);
-        doc.setFontSize(22);
-        doc.text(fullName, margin, 70);
-        doc.setFontSize(12);
-        doc.setFont(undefined, 'normal');
-        doc.text(role, margin, 80);
+        const captureUrl = `${window.location.origin}/portfolio/view/${source.studentId}?t=${Date.now()}`;
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.left = '-10000px';
+        iframe.style.top = '0';
+        iframe.style.width = '1440px';
+        iframe.style.height = '2200px';
+        iframe.style.border = '0';
+        iframe.style.opacity = '0';
+        iframe.src = captureUrl;
+        document.body.appendChild(iframe);
 
-        doc.addPage();
-        let yPos = margin;
-        doc.setFontSize(18);
-        doc.setFont(undefined, 'bold');
-        doc.text('About', margin, yPos);
-        yPos += 10;
-        doc.setFontSize(11);
-        doc.setFont(undefined, 'normal');
-        const aboutText = doc.splitTextToSize(source.about || 'No description available.', pageWidth - 2 * margin);
-        doc.text(aboutText, margin, yPos);
-        yPos += aboutText.length * 6 + 12;
-
-        doc.setFontSize(16);
-        doc.setFont(undefined, 'bold');
-        doc.text('Skills', margin, yPos);
-        yPos += 8;
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'normal');
-        const skillsText = (source.skills || []).length > 0 ? source.skills.join(', ') : 'No skills listed.';
-        const skillsSplit = doc.splitTextToSize(skillsText, pageWidth - 2 * margin);
-        doc.text(skillsSplit, margin, yPos);
-        yPos += skillsSplit.length * 5 + 12;
-
-        doc.setFontSize(16);
-        doc.setFont(undefined, 'bold');
-        doc.text('Certifications', margin, yPos);
-        yPos += 8;
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'normal');
-        (source.certifications || []).forEach((c) => {
-            if (yPos > 260) {
-                doc.addPage();
-                yPos = margin;
+        const cleanup = () => {
+            try {
+                iframe.remove();
+            } catch {
+                // ignore cleanup issues
             }
-            doc.text(`- ${c.name || 'Unnamed Certification'} (${c.issuer || 'Unknown Issuer'})`, margin, yPos);
-            yPos += 6;
-        });
+        };
 
-        (source.projects || []).forEach((p, index) => {
-            doc.addPage();
-            let py = margin;
-            doc.setFontSize(11);
-            doc.setFont(undefined, 'normal');
-            doc.text(`Project ${index + 1}`, margin, py);
-            py += 8;
+        try {
+            await new Promise((resolve, reject) => {
+                iframe.onload = () => resolve();
+                iframe.onerror = () => reject(new Error('Failed to load portfolio template for PDF export.'));
+            });
 
-            doc.setFontSize(18);
-            doc.setFont(undefined, 'bold');
-            doc.text(p.title || `Project ${index + 1}`, margin, py);
-            py += 10;
+            await new Promise((resolve) => window.setTimeout(resolve, 1200));
 
-            doc.setFontSize(10);
-            doc.setFont(undefined, 'normal');
-            if (p.year) {
-                doc.text(`Year: ${p.year}`, margin, py);
-                py += 6;
+            const frameWindow = iframe.contentWindow;
+            const frameDocument = iframe.contentDocument || frameWindow?.document;
+            const captureRoot = frameDocument?.querySelector('.min-h-screen') || frameDocument?.body;
+            if (!captureRoot) {
+                throw new Error('Could not render the portfolio template for PDF export.');
             }
-            if (p.tech) {
-                const techText = doc.splitTextToSize(`Tech/Tools: ${p.tech}`, pageWidth - 2 * margin);
-                doc.text(techText, margin, py);
-                py += techText.length * 5 + 4;
-            }
-            if (p.repoUrl) {
-                const repoText = doc.splitTextToSize(`Repository: ${p.repoUrl}`, pageWidth - 2 * margin);
-                doc.text(repoText, margin, py);
-                py += repoText.length * 5 + 4;
-            }
-            if (p.pdfUrl) {
-                const pdfText = doc.splitTextToSize(`Project PDF: ${p.pdfName || p.pdfUrl}`, pageWidth - 2 * margin);
-                doc.text(pdfText, margin, py);
-                py += pdfText.length * 5 + 4;
-            }
-            const descText = doc.splitTextToSize(p.desc || 'No description available.', pageWidth - 2 * margin);
-            doc.text(descText, margin, py);
-        });
 
-        const totalPages = doc.getNumberOfPages();
-        for (let i = 1; i <= totalPages; i += 1) {
-            doc.setPage(i);
-            doc.setFontSize(9);
-            doc.setFont(undefined, 'normal');
-            doc.text(`Page ${i} of ${totalPages}`, pageWidth - margin, 290, { align: 'right' });
+            const canvas = await html2canvas(captureRoot, {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: '#ffffff',
+                windowWidth: Math.max(captureRoot.scrollWidth || 1440, 1440),
+                windowHeight: Math.max(captureRoot.scrollHeight || 2200, 2200),
+            });
+
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const imgWidth = pageWidth;
+            const imgHeight = (canvas.height * imgWidth) / canvas.width;
+            const imageData = canvas.toDataURL('image/png');
+
+            let renderedHeight = imgHeight;
+            let position = 0;
+            pdf.addImage(imageData, 'PNG', 0, position, imgWidth, imgHeight);
+            renderedHeight -= pageHeight;
+
+            while (renderedHeight > 0) {
+                position = renderedHeight - imgHeight;
+                pdf.addPage();
+                pdf.addImage(imageData, 'PNG', 0, position, imgWidth, imgHeight);
+                renderedHeight -= pageHeight;
+            }
+
+            pdf.save(`${source.studentId || 'portfolio'}_portfolio.pdf`);
+        } finally {
+            cleanup();
         }
-
-        doc.save(`${source.studentId || 'portfolio'}_portfolio.pdf`);
     };
 
     const handleDownloadHTML = () => {

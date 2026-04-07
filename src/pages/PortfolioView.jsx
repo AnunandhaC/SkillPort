@@ -1047,7 +1047,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="flex items-center justify-between border-b py-4">
                                 <span className="font-medium">{c.name}</span>
-                                <span className="text-slate-500">{c.issuer}</span>
+                                {renderCertificationContent(c)}
                             </div>
                         ))}
                     </div>
@@ -1304,7 +1304,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-slate-800 border-l-4 border-blue-500 p-4 rounded">
                                 <h4 className="font-bold text-white">{c.name}</h4>
-                                <p className="text-slate-400 text-sm">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-white/10', 'text-slate-400 text-sm')}</div>
                             </div>
                         ))}
                     </div>
@@ -1386,7 +1386,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-blue-100 border-l-4 border-blue-600 p-4 rounded">
                                 <h4 className="font-bold text-blue-900">{c.name}</h4>
-                                <p className="text-blue-700">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-blue-200', 'text-blue-700')}</div>
                             </div>
                         ))}
                     </div>
@@ -1821,7 +1821,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-orange-100 border-l-4 border-orange-600 p-4 rounded">
                                 <h4 className="font-bold text-orange-900">{c.name}</h4>
-                                <p className="text-orange-700">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-orange-200', 'text-orange-700')}</div>
                             </div>
                         ))}
                     </div>
@@ -1898,7 +1898,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-yellow-100 border-l-4 border-yellow-600 p-4 rounded">
                                 <h4 className="font-bold text-yellow-900">{c.name}</h4>
-                                <p className="text-yellow-700">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-yellow-200', 'text-yellow-700')}</div>
                             </div>
                         ))}
                     </div>
@@ -1951,7 +1951,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-purple-100 border-l-4 border-purple-600 p-4 rounded">
                                 <h4 className="font-bold text-purple-900">{c.name}</h4>
-                                <p className="text-purple-700">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-purple-200', 'text-purple-700')}</div>
                             </div>
                         ))}
                     </div>
@@ -2004,7 +2004,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-cyan-100 border-l-4 border-cyan-600 p-4 rounded">
                                 <h4 className="font-bold text-cyan-900">{c.name}</h4>
-                                <p className="text-cyan-700">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-cyan-200', 'text-cyan-700')}</div>
                             </div>
                         ))}
                     </div>
@@ -2052,7 +2052,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-purple-100 border-l-4 border-purple-600 p-4 rounded">
                                 <h4 className="font-bold text-purple-900">{c.name}</h4>
-                                <p className="text-purple-700">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-purple-200', 'text-purple-700')}</div>
                             </div>
                         ))}
                     </div>
@@ -2335,13 +2335,54 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         <h2 className="text-2xl font-bold uppercase mb-6 flex items-center gap-3">
                             <span className="w-8 h-1 bg-black"></span> Awards
                         </h2>
-                        <ul className="list-disc pl-5 space-y-2">
+                        {isEditable && (
+                            <div className="mb-4">
+                                <button
+                                    type="button"
+                                    onClick={addCertificationGlobal}
+                                    className="px-3 py-1 rounded-lg border border-slate-300 bg-white text-sm font-medium hover:bg-slate-50 transition"
+                                >
+                                    + Certification
+                                </button>
+                            </div>
+                        )}
+                        <div className="space-y-3">
                             {certifications.map((c, i) => (
-                                <li key={i}>
-                                    <span className="font-bold">{c.name}</span> - {c.issuer}
-                                </li>
+                                <div key={i} className="border border-slate-200 rounded-lg p-4 bg-white">
+                                    <EditableText
+                                        as="div"
+                                        className="font-bold"
+                                        value={c.name}
+                                        placeholder={`Certification ${i + 1}`}
+                                        onCommit={(v) => updateCertificationItem(i, 'name', v)}
+                                    />
+                                    <EditableText
+                                        as="div"
+                                        className="text-slate-600 mt-1"
+                                        value={c.issuer || ''}
+                                        placeholder="Issuer"
+                                        onCommit={(v) => updateCertificationItem(i, 'issuer', v)}
+                                    />
+                                    {isEditable && (
+                                        <div className="mt-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => onPortfolioChange((prev) => ({
+                                                    ...prev,
+                                                    certifications: (Array.isArray(prev.certifications) ? prev.certifications : []).filter((_, idx) => idx !== i),
+                                                }))}
+                                                className="text-xs text-red-600 hover:text-red-700"
+                                            >
+                                                Remove certification
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             ))}
-                        </ul>
+                            {isEditable && certifications.length === 0 && (
+                                <div className="text-sm text-slate-500">Add a certification to start editing.</div>
+                            )}
+                        </div>
                     </section>
                 </div>
                 <Footer />
@@ -2617,11 +2658,7 @@ const BtechBedimcode1Template = ({ portfolio, about, skills, projects, exportMod
                                         <div className="h-36 bg-gradient-to-br from-cyan-500/25 via-white/5 to-blue-500/25 relative">
                                             {img ? (
                                                 <img src={img} alt={p?.title || `Project ${idx + 1}`} className="w-full h-full object-cover" />
-                                            ) : (
-                                                <div className="absolute inset-0 flex items-center justify-center text-white/60 text-sm">
-                                                    Add image URL (optional)
-                                                </div>
-                                            )}
+                                            ) : null}
                                         </div>
                                         <div className="p-5">
                                             <h3 className="font-bold text-white/90">{p?.title || `Project ${idx + 1}`}</h3>

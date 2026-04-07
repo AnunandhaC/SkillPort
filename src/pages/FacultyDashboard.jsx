@@ -4,7 +4,8 @@ import { useData } from '../context/DataProvider';
 import { User, ExternalLink, Save } from 'lucide-react';
 
 const FacultyDashboard = () => {
-    const { getAllPortfolios, addReview, savePortfolio, refreshPortfolios } = useData();
+    const navigate = useNavigate();
+    const { getAllPortfolios } = useData();
     const portfolios = getAllPortfolios();
 
     const totalPortfolios = portfolios.length;

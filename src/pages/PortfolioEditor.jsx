@@ -18,6 +18,16 @@ const PortfolioEditor = () => {
         .replace(/\./g, '')
         .replace(/\s+/g, '');
     const isBArch = normalizedProgram === 'barch';
+    const getDefaultBtechTemplate = (branch) => {
+        const branchMap = {
+            cs: 'btech-cs',
+            mech: 'btech-mech',
+            eee: 'btech-eee',
+            ece: 'btech-ece',
+            robo: 'btech-robo',
+        };
+        return branchMap[String(branch || 'cs').trim().toLowerCase()] || 'btech-cs';
+    };
 
     const [formData, setFormData] = useState({
         about: '',
@@ -44,7 +54,7 @@ const PortfolioEditor = () => {
             },
             templatePages: [],
         },
-        templateId: 'modern',
+        templateId: 'btech-cs',
     });
 
     const [btechBranch, setBtechBranch] = useState('cs');
@@ -127,8 +137,8 @@ const PortfolioEditor = () => {
             ? String(formData.templateId || '').startsWith('barch-')
                 ? formData.templateId
                 : 'barch-red'
-            : formData.templateId === 'barch-red'
-                ? 'modern'
+            : (formData.templateId === 'barch-red' || formData.templateId === 'modern')
+                ? getDefaultBtechTemplate(btechBranch)
                 : formData.templateId,
         meta: {
             ...formData.meta,
@@ -399,7 +409,7 @@ const PortfolioEditor = () => {
             ...prev,
             projects: [
                 ...(prev.projects || []),
-                { title: 'New Project', desc: 'Edit this project details', tech: '', year: '', image: '', repoUrl: '', pdfUrl: '', pdfName: '' },
+                { title: 'New Project', desc: 'Edit this project description' },
             ],
         }));
     };
@@ -467,7 +477,7 @@ const PortfolioEditor = () => {
     const addCertification = () => {
         setFormData((prev) => ({
             ...prev,
-            certifications: [...(Array.isArray(prev.certifications) ? prev.certifications : []), { name: 'New Certification', issuer: 'Issuer' }],
+            certifications: [...(Array.isArray(prev.certifications) ? prev.certifications : []), { name: 'New Certification', image: '' }],
         }));
     };
 
@@ -515,6 +525,7 @@ const PortfolioEditor = () => {
         .filter((t) => (isBArch ? t.group === 'barch' : t.group && !String(t.group).startsWith('barch')))
         .filter((t) => {
             if (isBArch) return true;
+            if (t.id === 'modern') return false;
             if (!t.branch) return true;
             return t.branch === btechBranch;
         });
@@ -737,13 +748,6 @@ const PortfolioEditor = () => {
                                 </div>
                             </div>
                             <div className="flex flex-wrap gap-2" data-export-hide="1">
-                                <button
-                                    type="button"
-                                    onClick={addTemplatePage}
-                                    className="inline-flex items-center gap-2 text-sm bg-blue-600 px-3 py-1 rounded text-white"
-                                >
-                                    <Plus size={14} /> Add Page
-                                </button>
                                 <button
                                     type="button"
                                     onClick={handleDownloadTemplate}

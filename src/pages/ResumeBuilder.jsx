@@ -374,233 +374,189 @@ const ResumeBuilder = () => {
             yPos += objectiveLines.length * 12 + 8;
         }
 
-        // Education
-        if (formData.education.some(e => e.degree || e.university)) {
-            checkPageBreak(40);
-            doc.setFontSize(11);
-            doc.setFont(undefined, 'bold');
-            doc.text('EDUCATION', margin, yPos);
-            yPos += 2;
-            drawSectionLine();
-            doc.setFontSize(9);
-            doc.setFont(undefined, 'normal');
-
-            formData.education.forEach(edu => {
-                if (edu.degree || edu.university) {
-                    checkPageBreak(35);
-                    const leftX = margin + 10;
-                    const rightX = pageWidth - margin - 10;
-                    
-                    // Left side: Institution, Degree, Location
-                    let leftY = yPos;
-                    if (edu.university) {
-                        doc.setFont(undefined, 'bold');
-                        doc.setFontSize(9);
-                        doc.text(edu.university, leftX, leftY);
-                        leftY += 11;
-                    }
-                    if (edu.degree) {
-                        doc.setFont(undefined, 'italic');
-                        doc.setFontSize(9);
-                        doc.text(edu.degree, leftX, leftY);
-                        leftY += 11;
-                    }
-                    if (edu.institution) {
-                        doc.setFont(undefined, 'normal');
-                        doc.setFontSize(9);
-                        doc.text(edu.institution, leftX, leftY);
-                        leftY += 11;
-                    }
-                    if (edu.location) {
-                        doc.text(edu.location, leftX, leftY);
-                        leftY += 11;
-                    }
-                    
-                    // Right side: Dates, GPA/Percentage
-                    let rightY = yPos;
-                    const rightInfo = [];
-                    if (edu.startDate && edu.endDate) {
-                        rightInfo.push(`${edu.startDate} -- ${edu.endDate}`);
-                    } else if (edu.startDate) {
-                        rightInfo.push(edu.startDate);
-                    }
-                    if (edu.gpa) {
-                        rightInfo.push(`Current GPA: ${edu.gpa}`);
-                    }
-                    if (edu.percentage) {
-                        rightInfo.push(`Percentage: ${edu.percentage}%`);
-                    }
-                    
-                    if (rightInfo.length > 0) {
-                        doc.setFont(undefined, 'normal');
-                        doc.setFontSize(9);
-                        rightInfo.forEach((info, idx) => {
-                            doc.text(info, rightX, rightY, { align: 'right' });
-                            rightY += 11;
-                        });
-                    }
-                    
-                    yPos = Math.max(leftY, rightY) + 3;
-                }
-            });
-            yPos += 3;
-        }
-
-        // Technical Skills
-        if (formData.languages.length > 0 || formData.developerTools.length > 0 || 
-            formData.technologies.length > 0 || formData.softSkills.length > 0) {
-            checkPageBreak(30);
-            doc.setFontSize(11);
-            doc.setFont(undefined, 'bold');
-            doc.text('TECHNICAL SKILLS', margin, yPos);
-            yPos += 2;
-            drawSectionLine();
-            doc.setFontSize(9);
-            doc.setFont(undefined, 'normal');
-
-            const skillX = margin + 10;
-            if (formData.languages.length > 0) {
-                doc.setFont(undefined, 'bold');
-                doc.text('Languages', skillX, yPos);
-                doc.setFont(undefined, 'normal');
-                doc.text(`: ${formData.languages.join(', ')}`, skillX + 50, yPos);
-                yPos += 11;
-            }
-            if (formData.developerTools.length > 0) {
-                doc.setFont(undefined, 'bold');
-                doc.text('Developer Tools', skillX, yPos);
-                doc.setFont(undefined, 'normal');
-                doc.text(`: ${formData.developerTools.join(', ')}`, skillX + 80, yPos);
-                yPos += 11;
-            }
-            if (formData.technologies.length > 0) {
-                doc.setFont(undefined, 'bold');
-                doc.text('Technologies/Frameworks', skillX, yPos);
-                doc.setFont(undefined, 'normal');
-                doc.text(`: ${formData.technologies.join(', ')}`, skillX + 120, yPos);
-                yPos += 11;
-            }
-            if (formData.softSkills.length > 0) {
-                doc.setFont(undefined, 'bold');
-                doc.text('Soft Skills', skillX, yPos);
-                doc.setFont(undefined, 'normal');
-                doc.text(`: ${formData.softSkills.join(', ')}`, skillX + 50, yPos);
-                yPos += 11;
-            }
-            yPos += 3;
-        }
-
-        // Training and Certifications
-        if (formData.certifications.some(c => c.name || c.issuer)) {
-            checkPageBreak(40);
-            doc.setFontSize(11);
-            doc.setFont(undefined, 'bold');
-            doc.text('TRAINING AND CERTIFICATIONS', margin, yPos);
-            yPos += 2;
-            drawSectionLine();
-            doc.setFontSize(9);
-            doc.setFont(undefined, 'normal');
-
-            formData.certifications.forEach(cert => {
-                if (cert.name || cert.issuer) {
-                    checkPageBreak(35);
-                    const leftX = margin + 10;
-                    const rightX = pageWidth - margin - 10;
-                    
-                    // Left: Certification name, Right: Dates
-                    if (cert.name) {
-                        doc.setFont(undefined, 'bold');
-                        doc.setFontSize(9);
-                        doc.text(cert.name, leftX, yPos);
-                    }
-                    
-                    // Right side: Dates
-                    if (cert.startDate || cert.endDate) {
-                        const dateText = cert.startDate && cert.endDate 
-                            ? `${cert.startDate} -- ${cert.endDate}`
-                            : cert.startDate || cert.endDate;
-                        doc.setFont(undefined, 'bold');
-                        doc.setFontSize(9);
-                        doc.text(dateText, rightX, yPos, { align: 'right' });
-                    }
-                    yPos += 11;
-                    
-                    // Description as bullet points
-                    if (cert.description) {
-                        const descLines = cert.description.split('\n').filter(l => l.trim());
-                        descLines.forEach(line => {
-                            doc.setFont(undefined, 'normal');
-                            doc.setFontSize(9);
-                            doc.text(`• ${line.trim()}`, leftX + 10, yPos);
-                            yPos += 11;
-                        });
-                    }
-                    yPos += 2;
-                }
-            });
-            yPos += 3;
-        }
-
-        // Projects
-        if (formData.projects.some(p => p.title || p.description)) {
-            checkPageBreak(40);
-            doc.setFontSize(11);
-            doc.setFont(undefined, 'bold');
-            doc.text('PROJECTS', margin, yPos);
-            yPos += 2;
-            drawSectionLine();
-            doc.setFontSize(9);
-            doc.setFont(undefined, 'normal');
-
-            formData.projects.forEach(project => {
-                if (project.title || project.description) {
-                    checkPageBreak(35);
-                    const leftX = margin + 10;
-                    const rightX = pageWidth - margin - 10;
-                    
-                    // Left: Project Title | Technologies, Right: Date/Status
-                    let projectTitle = '';
-                    if (project.title) {
-                        projectTitle = project.title;
-                    }
-                    if (project.technologies) {
-                        projectTitle += projectTitle ? ` | ${project.technologies}` : project.technologies;
-                    }
-                    
-                    if (projectTitle) {
-                        doc.setFont(undefined, 'bold');
-                        doc.setFontSize(9);
-                        doc.text(projectTitle, leftX, yPos);
-                    }
-                    
-                    // Right side: Date or Status
-                    if (project.date || project.status) {
-                        const rightText = project.date || project.status;
-                        doc.setFont(undefined, 'bold');
-                        doc.setFontSize(9);
-                        doc.text(rightText, rightX, yPos, { align: 'right' });
-                    }
-                    yPos += 11;
-                    
-                    // Description as bullet points
-                    if (project.description) {
-                        const descLines = project.description.split('\n').filter(l => l.trim());
-                        descLines.forEach(line => {
-                            doc.setFont(undefined, 'normal');
-                            doc.setFontSize(9);
-                            doc.text(`• ${line.trim()}`, leftX + 10, yPos);
-                            yPos += 11;
-                        });
-                    }
-                    yPos += 2;
-                }
-            });
-        }
-
-        // Save PDF
         const fileName = formData.name ? `${formData.name.replace(/\s+/g, '_')}_Resume.pdf` : 'Resume.pdf';
-        doc.save(fileName);
+        pdf.save(fileName);
     };
+
+    const renderResumePreviewContent = (previewRef = null) => (
+        <div
+            ref={previewRef}
+            className="max-w-3xl mx-auto bg-white p-8 shadow-lg"
+            style={{ minHeight: '210mm', fontFamily: 'serif', width: '816px' }}
+        >
+            <div className="text-center mb-4" style={{ marginTop: '8px' }}>
+                <h1 className="text-2xl font-bold text-gray-900 mb-2 uppercase tracking-wide">
+                    {formData.name ? formData.name.toUpperCase() : 'YOUR NAME'}
+                </h1>
+                <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-gray-600">
+                    {formData.phone && <span className="underline">{formData.phone}</span>}
+                    {formData.linkedin && (
+                        <span className="underline">
+                            linkedin.com/in/{formData.linkedin.split('/').pop() || formData.linkedin}
+                        </span>
+                    )}
+                    {formData.email && <span className="underline">{formData.email}</span>}
+                    {formData.github && (
+                        <span className="underline">
+                            github.com/{formData.github.split('/').pop() || formData.github}
+                        </span>
+                    )}
+                    {formData.phone && (formData.linkedin || formData.email || formData.github) && <span>~</span>}
+                    {formData.linkedin && formData.email && <span>~</span>}
+                    {formData.email && formData.github && <span>~</span>}
+                </div>
+            </div>
+
+            {formData.careerObjective && (
+                <div className="mb-4">
+                    <h2 className="text-sm font-bold text-gray-900 mb-1 uppercase tracking-wide">Career Objective</h2>
+                    <hr className="border-gray-900 mb-2" />
+                    <div className="pl-4">
+                        <p className="text-xs text-gray-700 leading-relaxed">{formData.careerObjective}</p>
+                    </div>
+                </div>
+            )}
+
+            {formData.education.some(e => e.degree || e.university) && (
+                <div className="mb-4">
+                    <h2 className="text-sm font-bold text-gray-900 mb-1 uppercase tracking-wide">Education</h2>
+                    <hr className="border-gray-900 mb-2" />
+                    {formData.education.map((edu) => (
+                        (edu.degree || edu.university) && (
+                            <div key={edu.id} className="mb-3 flex justify-between items-start">
+                                <div className="flex-1">
+                                    {edu.university && (
+                                        <h3 className="text-xs font-bold text-gray-900 mb-0.5">{edu.university}</h3>
+                                    )}
+                                    {edu.degree && (
+                                        <p className="text-xs italic text-gray-700 mb-0.5">{edu.degree}</p>
+                                    )}
+                                    {edu.institution && (
+                                        <p className="text-xs text-gray-600">{edu.institution}</p>
+                                    )}
+                                    {edu.location && (
+                                        <p className="text-xs text-gray-600">{edu.location}</p>
+                                    )}
+                                </div>
+                                <div className="text-right text-xs text-gray-600 ml-4">
+                                    {edu.startDate && edu.endDate && (
+                                        <p className="font-bold mb-0.5">{edu.startDate} -- {edu.endDate}</p>
+                                    )}
+                                    {edu.gpa && <p>Current GPA: {edu.gpa}</p>}
+                                    {edu.percentage && <p>Percentage: {edu.percentage}%</p>}
+                                </div>
+                            </div>
+                        )
+                    ))}
+                </div>
+            )}
+
+            {(formData.languages.length > 0 || formData.developerTools.length > 0 ||
+              formData.technologies.length > 0 || formData.softSkills.length > 0) && (
+                <div className="mb-4">
+                    <h2 className="text-sm font-bold text-gray-900 mb-1 uppercase tracking-wide">Technical Skills</h2>
+                    <hr className="border-gray-900 mb-2" />
+                    <div className="pl-4 space-y-1 text-xs">
+                        {formData.languages.length > 0 && (
+                            <div>
+                                <span className="font-bold text-gray-900">Languages</span>
+                                <span className="text-gray-700">: {formData.languages.join(', ')}</span>
+                            </div>
+                        )}
+                        {formData.developerTools.length > 0 && (
+                            <div>
+                                <span className="font-bold text-gray-900">Developer Tools</span>
+                                <span className="text-gray-700">: {formData.developerTools.join(', ')}</span>
+                            </div>
+                        )}
+                        {formData.technologies.length > 0 && (
+                            <div>
+                                <span className="font-bold text-gray-900">Technologies/Frameworks</span>
+                                <span className="text-gray-700">: {formData.technologies.join(', ')}</span>
+                            </div>
+                        )}
+                        {formData.softSkills.length > 0 && (
+                            <div>
+                                <span className="font-bold text-gray-900">Soft Skills</span>
+                                <span className="text-gray-700">: {formData.softSkills.join(', ')}</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {formData.certifications.some(c => c.name || c.issuer || c.description) && (
+                <div className="mb-4">
+                    <h2 className="text-sm font-bold text-gray-900 mb-1 uppercase tracking-wide">Training and Certifications</h2>
+                    <hr className="border-gray-900 mb-2" />
+                    {formData.certifications.map((cert) => (
+                        (cert.name || cert.issuer || cert.description) && (
+                            <div key={cert.id} className="mb-3">
+                                <div className="flex justify-between items-start mb-1">
+                                    <div className="flex-1">
+                                        {cert.name && (
+                                            <h3 className="text-xs font-bold text-gray-900">{cert.name}</h3>
+                                        )}
+                                        {cert.issuer && (
+                                            <p className="text-xs italic text-gray-700">{cert.issuer}</p>
+                                        )}
+                                    </div>
+                                    {(cert.startDate || cert.endDate) && (
+                                        <div className="text-right text-xs font-bold text-gray-900 ml-4">
+                                            {cert.startDate && cert.endDate
+                                                ? `${cert.startDate} -- ${cert.endDate}`
+                                                : cert.startDate || cert.endDate}
+                                        </div>
+                                    )}
+                                </div>
+                                {cert.description && (
+                                    <div className="pl-4">
+                                        {cert.description.split('\n').filter(l => l.trim()).map((line, idx) => (
+                                            <p key={idx} className="text-xs text-gray-700 mb-0.5">- {line.trim()}</p>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    ))}
+                </div>
+            )}
+
+            {formData.projects.some(p => p.title || p.technologies || p.description) && (
+                <div className="mb-4">
+                    <h2 className="text-sm font-bold text-gray-900 mb-1 uppercase tracking-wide">Projects</h2>
+                    <hr className="border-gray-900 mb-2" />
+                    {formData.projects.map((project) => (
+                        (project.title || project.technologies || project.description) && (
+                            <div key={project.id} className="mb-3">
+                                <div className="flex justify-between items-start mb-1">
+                                    <div className="flex-1">
+                                        <span className="text-xs font-bold text-gray-900">
+                                            {project.title || 'Project'}
+                                            {project.technologies && ` | ${project.technologies}`}
+                                        </span>
+                                    </div>
+                                    {(project.date || project.status) && (
+                                        <div className="text-right text-xs font-bold text-gray-900 ml-4">
+                                            {project.date || project.status}
+                                        </div>
+                                    )}
+                                </div>
+                                {project.description && (
+                                    <div className="pl-4">
+                                        {project.description.split('\n').filter(l => l.trim()).map((line, idx) => (
+                                            <p key={idx} className="text-xs text-gray-700 mb-0.5">- {line.trim()}</p>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+
 
 
     return (
@@ -1052,6 +1008,10 @@ const ResumeBuilder = () => {
                 </section>
             </div>
 
+            <div className="fixed left-[-10000px] top-0 pointer-events-none opacity-0">
+                {renderResumePreviewContent(resumePreviewRef)}
+            </div>
+
             {/* Preview Modal */}
             {showPreview && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
@@ -1078,181 +1038,7 @@ const ResumeBuilder = () => {
 
                         {/* Preview Content */}
                         <div className="flex-1 overflow-y-auto p-8 bg-gray-50">
-                            <div className="max-w-3xl mx-auto bg-white p-8 shadow-lg" style={{ minHeight: '210mm', fontFamily: 'serif' }}>
-                                {/* Header - Name (centered, uppercase, large) */}
-                                <div className="text-center mb-4" style={{ marginTop: '8px' }}>
-                                    <h1 className="text-2xl font-bold text-gray-900 mb-2 uppercase tracking-wide">
-                                        {formData.name ? formData.name.toUpperCase() : 'YOUR NAME'}
-                                    </h1>
-                                    <div className="flex flex-wrap items-center justify-center gap-2 text-xs text-gray-600">
-                                        {formData.phone && <span className="underline">{formData.phone}</span>}
-                                        {formData.linkedin && (
-                                            <span className="underline">
-                                                linkedin.com/in/{formData.linkedin.split('/').pop() || formData.linkedin}
-                                            </span>
-                                        )}
-                                        {formData.email && <span className="underline">{formData.email}</span>}
-                                        {formData.github && (
-                                            <span className="underline">
-                                                github.com/{formData.github.split('/').pop() || formData.github}
-                                            </span>
-                                        )}
-                                        {formData.phone && (formData.linkedin || formData.email || formData.github) && <span>~</span>}
-                                        {formData.linkedin && formData.email && <span>~</span>}
-                                        {formData.email && formData.github && <span>~</span>}
-                                    </div>
-                                </div>
-
-                                {/* Career Objective */}
-                                {formData.careerObjective && (
-                                    <div className="mb-4">
-                                        <h2 className="text-sm font-bold text-gray-900 mb-1 uppercase tracking-wide">Career Objective</h2>
-                                        <hr className="border-gray-900 mb-2" />
-                                        <div className="pl-4">
-                                            <p className="text-xs text-gray-700 leading-relaxed">{formData.careerObjective}</p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Education */}
-                                {formData.education.some(e => e.degree || e.university) && (
-                                    <div className="mb-4">
-                                        <h2 className="text-sm font-bold text-gray-900 mb-1 uppercase tracking-wide">Education</h2>
-                                        <hr className="border-gray-900 mb-2" />
-                                        {formData.education.map((edu) => (
-                                            (edu.degree || edu.university) && (
-                                                <div key={edu.id} className="mb-3 flex justify-between items-start">
-                                                    <div className="flex-1">
-                                                        {edu.university && (
-                                                            <h3 className="text-xs font-bold text-gray-900 mb-0.5">{edu.university}</h3>
-                                                        )}
-                                                        {edu.degree && (
-                                                            <p className="text-xs italic text-gray-700 mb-0.5">{edu.degree}</p>
-                                                        )}
-                                                        {edu.institution && (
-                                                            <p className="text-xs text-gray-600">{edu.institution}</p>
-                                                        )}
-                                                        {edu.location && (
-                                                            <p className="text-xs text-gray-600">{edu.location}</p>
-                                                        )}
-                                                    </div>
-                                                    <div className="text-right text-xs text-gray-600 ml-4">
-                                                        {edu.startDate && edu.endDate && (
-                                                            <p className="font-bold mb-0.5">{edu.startDate} -- {edu.endDate}</p>
-                                                        )}
-                                                        {edu.gpa && <p>Current GPA: {edu.gpa}</p>}
-                                                        {edu.percentage && <p>Percentage: {edu.percentage}%</p>}
-                                                    </div>
-                                                </div>
-                                            )
-                                        ))}
-                                    </div>
-                                )}
-
-                                {/* Technical Skills */}
-                                {(formData.languages.length > 0 || formData.developerTools.length > 0 || 
-                                  formData.technologies.length > 0 || formData.softSkills.length > 0) && (
-                                    <div className="mb-4">
-                                        <h2 className="text-sm font-bold text-gray-900 mb-1 uppercase tracking-wide">Technical Skills</h2>
-                                        <hr className="border-gray-900 mb-2" />
-                                        <div className="pl-4 space-y-1 text-xs">
-                                            {formData.languages.length > 0 && (
-                                                <div>
-                                                    <span className="font-bold text-gray-900">Languages</span>
-                                                    <span className="text-gray-700">: {formData.languages.join(', ')}</span>
-                                                </div>
-                                            )}
-                                            {formData.developerTools.length > 0 && (
-                                                <div>
-                                                    <span className="font-bold text-gray-900">Developer Tools</span>
-                                                    <span className="text-gray-700">: {formData.developerTools.join(', ')}</span>
-                                                </div>
-                                            )}
-                                            {formData.technologies.length > 0 && (
-                                                <div>
-                                                    <span className="font-bold text-gray-900">Technologies/Frameworks</span>
-                                                    <span className="text-gray-700">: {formData.technologies.join(', ')}</span>
-                                                </div>
-                                            )}
-                                            {formData.softSkills.length > 0 && (
-                                                <div>
-                                                    <span className="font-bold text-gray-900">Soft Skills</span>
-                                                    <span className="text-gray-700">: {formData.softSkills.join(', ')}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Training and Certifications */}
-                                {formData.certifications.some(c => c.name || c.issuer) && (
-                                    <div className="mb-4">
-                                        <h2 className="text-sm font-bold text-gray-900 mb-1 uppercase tracking-wide">Training and Certifications</h2>
-                                        <hr className="border-gray-900 mb-2" />
-                                        {formData.certifications.map((cert) => (
-                                            (cert.name || cert.issuer) && (
-                                                <div key={cert.id} className="mb-3">
-                                                    <div className="flex justify-between items-start mb-1">
-                                                        <div className="flex-1">
-                                                            {cert.name && (
-                                                                <h3 className="text-xs font-bold text-gray-900">{cert.name}</h3>
-                                                            )}
-                                                        </div>
-                                                        {(cert.startDate || cert.endDate) && (
-                                                            <div className="text-right text-xs font-bold text-gray-900 ml-4">
-                                                                {cert.startDate && cert.endDate 
-                                                                    ? `${cert.startDate} -- ${cert.endDate}`
-                                                                    : cert.startDate || cert.endDate}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    {cert.description && (
-                                                        <div className="pl-4">
-                                                            {cert.description.split('\n').filter(l => l.trim()).map((line, idx) => (
-                                                                <p key={idx} className="text-xs text-gray-700 mb-0.5">• {line.trim()}</p>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )
-                                        ))}
-                                    </div>
-                                )}
-
-                                {/* Projects */}
-                                {formData.projects.some(p => p.title || p.description) && (
-                                    <div className="mb-4">
-                                        <h2 className="text-sm font-bold text-gray-900 mb-1 uppercase tracking-wide">Projects</h2>
-                                        <hr className="border-gray-900 mb-2" />
-                                        {formData.projects.map((project) => (
-                                            (project.title || project.description) && (
-                                                <div key={project.id} className="mb-3">
-                                                    <div className="flex justify-between items-start mb-1">
-                                                        <div className="flex-1">
-                                                            <span className="text-xs font-bold text-gray-900">
-                                                                {project.title || 'Project'}
-                                                                {project.technologies && ` | ${project.technologies}`}
-                                                            </span>
-                                                        </div>
-                                                        {(project.date || project.status) && (
-                                                            <div className="text-right text-xs font-bold text-gray-900 ml-4">
-                                                                {project.date || project.status}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    {project.description && (
-                                                        <div className="pl-4">
-                                                            {project.description.split('\n').filter(l => l.trim()).map((line, idx) => (
-                                                                <p key={idx} className="text-xs text-gray-700 mb-0.5">• {line.trim()}</p>
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
+                            {renderResumePreviewContent()}
                         </div>
                     </div>
                 </div>

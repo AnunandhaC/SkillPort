@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabaseClient';
 const DataContext = createContext(null);
 
 export const useData = () => useContext(DataContext);
+const FACULTY_EVALUATION_CACHE_KEY = 'dps_faculty_evaluations';
 
 const INITIAL_OPPORTUNITIES = [
     {
@@ -50,6 +51,120 @@ export const DEFAULT_TEMPLATE_SECTIONS = [
     { key: 'testimonial', label: 'Testimonial', enabled: true },
 ];
 
+export const FACULTY_EVALUATION_CRITERIA = [
+    { key: 'content', label: 'Content Quality', maxScore: 20 },
+    { key: 'technical', label: 'Technical Depth', maxScore: 20 },
+    { key: 'presentation', label: 'Presentation', maxScore: 20 },
+    { key: 'creativity', label: 'Creativity', maxScore: 20 },
+    { key: 'communication', label: 'Communication', maxScore: 20 },
+];
+
+const cloneDefaultTemplateSections = () => DEFAULT_TEMPLATE_SECTIONS.map((section) => ({ ...section }));
+
+const buildEmptyCriteriaScores = () =>
+    FACULTY_EVALUATION_CRITERIA.reduce((acc, criterion) => {
+        acc[criterion.key] = '';
+        return acc;
+    }, {});
+
+const splitLegacyScoreAcrossCriteria = (score) => {
+    const total = Number(score);
+    if (!Number.isFinite(total) || total < 0) {
+        return buildEmptyCriteriaScores();
+    }
+
+    const maxTotal = FACULTY_EVALUATION_CRITERIA.reduce((sum, criterion) => sum + Number(criterion.maxScore || 0), 0);
+    const safeTotal = Math.max(0, Math.min(maxTotal, Math.round(total)));
+    const count = FACULTY_EVALUATION_CRITERIA.length;
+    const base = Math.floor(safeTotal / count);
+    let remainder = safeTotal - (base * count);
+
+    return FACULTY_EVALUATION_CRITERIA.reduce((acc, criterion) => {
+        const extra = remainder > 0 ? 1 : 0;
+        if (remainder > 0) remainder -= 1;
+        acc[criterion.key] = base + extra;
+        return acc;
+    }, {});
+};
+
+const normalizeCriteriaScores = (scores, fallbackScore = '') => {
+    const source = scores && typeof scores === 'object' ? scores : null;
+    const hasExplicitScores = Boolean(source) && FACULTY_EVALUATION_CRITERIA.some((criterion) => source[criterion.key] !== undefined && source[criterion.key] !== null && source[criterion.key] !== '');
+    const initial = hasExplicitScores ? buildEmptyCriteriaScores() : splitLegacyScoreAcrossCriteria(fallbackScore);
+
+    return FACULTY_EVALUATION_CRITERIA.reduce((acc, criterion) => {
+        const rawValue = source?.[criterion.key];
+        if (rawValue === '' || rawValue === null || rawValue === undefined) {
+            acc[criterion.key] = initial[criterion.key];
+            return acc;
+        }
+
+        const numericValue = Number(rawValue);
+        acc[criterion.key] = Number.isFinite(numericValue)
+            ? Math.max(0, Math.min(Number(criterion.maxScore || 20), numericValue))
+            : initial[criterion.key];
+        return acc;
+    }, {});
+};
+
+const calculateCriteriaTotal = (criteriaScores) =>
+    FACULTY_EVALUATION_CRITERIA.reduce((sum, criterion) => {
+        const numericValue = Number(criteriaScores?.[criterion.key]);
+        return sum + (Number.isFinite(numericValue) ? numericValue : 0);
+    }, 0);
+
+const normalizeFacultyEvaluation = (evaluation, fallbackScore = '', fallbackFeedback = '') => {
+    const normalizedScores = normalizeCriteriaScores(evaluation?.criteriaScores, fallbackScore);
+    const totalScore = calculateCriteriaTotal(normalizedScores);
+
+    return {
+        criteriaScores: normalizedScores,
+        feedback: String(evaluation?.feedback ?? fallbackFeedback ?? ''),
+        totalScore: totalScore || (fallbackScore === '' ? '' : Number(fallbackScore)),
+        updatedAt: evaluation?.updatedAt || null,
+    };
+};
+
+const readFacultyEvaluationCache = () => {
+    try {
+        const raw = localStorage.getItem(FACULTY_EVALUATION_CACHE_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (error) {
+        console.error('Failed to read faculty evaluation cache:', error);
+        return {};
+    }
+};
+
+const writeFacultyEvaluationCache = (cache) => {
+    try {
+        localStorage.setItem(FACULTY_EVALUATION_CACHE_KEY, JSON.stringify(cache || {}));
+    } catch (error) {
+        console.error('Failed to write faculty evaluation cache:', error);
+    }
+};
+
+const mergePortfolioWithCachedEvaluation = (portfolio, cachedEntry) => {
+    if (!portfolio || !cachedEntry) return portfolio;
+
+    const normalizedFacultyEvaluation = normalizeFacultyEvaluation(
+        cachedEntry?.facultyEvaluation,
+        cachedEntry?.score ?? portfolio?.score ?? '',
+        cachedEntry?.facultyFeedback ?? portfolio?.facultyFeedback ?? ''
+    );
+
+    return {
+        ...portfolio,
+        meta: {
+            ...(portfolio?.meta || {}),
+            facultyEvaluation: normalizedFacultyEvaluation,
+        },
+        score: normalizedFacultyEvaluation.totalScore,
+        facultyFeedback: normalizedFacultyEvaluation.feedback || '',
+        lastUpdated: cachedEntry?.lastUpdated || portfolio?.lastUpdated || new Date().toISOString(),
+    };
+};
+
 const normalizeSectionKey = (value) =>
     String(value || '')
         .trim()
@@ -59,7 +174,7 @@ const normalizeSectionKey = (value) =>
 
 const normalizeTemplateSections = (sections) => {
     if (!Array.isArray(sections) || sections.length === 0) {
-        return DEFAULT_TEMPLATE_SECTIONS.map((section) => ({ ...section }));
+        return cloneDefaultTemplateSections();
     }
 
     const seen = new Set();
@@ -82,7 +197,7 @@ const normalizeTemplateSections = (sections) => {
     });
 
     if (normalized.length === 0) {
-        return DEFAULT_TEMPLATE_SECTIONS.map((section) => ({ ...section }));
+        return cloneDefaultTemplateSections();
     }
 
     return normalized;
@@ -303,6 +418,8 @@ export const DataProvider = ({ children }) => {
 
             const mapped = {};
             (data || []).forEach((row) => {
+                    const meta = row.meta && typeof row.meta === 'object' ? row.meta : {};
+                    const facultyEvaluation = normalizeFacultyEvaluation(meta.facultyEvaluation, row.score ?? '', row.faculty_feedback || '');
                     mapped[row.student_id] = {
                         studentId: row.student_id,
                         about: row.about || '',
@@ -327,15 +444,30 @@ export const DataProvider = ({ children }) => {
                                 ? (row.meta.currentGpa ?? row.meta.gpa ?? '')
                                 : ''),
                         templateId: row.template_id || 'modern',
-                        score: row.score ?? '',
+                        score: facultyEvaluation.totalScore === '' ? (row.score ?? '') : facultyEvaluation.totalScore,
                         facultyFeedback: row.faculty_feedback || '',
                         lastUpdated: row.last_updated || row.updated_at || new Date().toISOString(),
                     };
                 });
 
+            const cachedEvaluations = readFacultyEvaluationCache();
+            Object.entries(cachedEvaluations).forEach(([studentId, cachedEntry]) => {
+                if (!mapped[studentId]) return;
+                mapped[studentId] = mergePortfolioWithCachedEvaluation(mapped[studentId], cachedEntry);
+            });
+
             setPortfolios(mapped);
         } catch (error) {
             console.error('Failed to load portfolios from Supabase:', error);
+            setPortfolios((prev) => {
+                const cachedEvaluations = readFacultyEvaluationCache();
+                const next = { ...prev };
+                Object.entries(cachedEvaluations).forEach(([studentId, cachedEntry]) => {
+                    if (!next[studentId]) return;
+                    next[studentId] = mergePortfolioWithCachedEvaluation(next[studentId], cachedEntry);
+                });
+                return next;
+            });
         } finally {
             setLoading(false);
         }
@@ -418,6 +550,19 @@ export const DataProvider = ({ children }) => {
                     : (existing.facultyFeedback ?? ''),
             lastUpdated: new Date().toISOString(),
         };
+        const normalizedFacultyEvaluation = normalizeFacultyEvaluation(
+            normalized?.meta?.facultyEvaluation,
+            data?.score !== undefined ? data.score : (existing.score ?? ''),
+            normalized.facultyFeedback
+        );
+        normalized.meta = {
+            ...normalized.meta,
+            facultyEvaluation: normalizedFacultyEvaluation,
+        };
+        normalized.score =
+            data?.score !== undefined
+                ? data.score
+                : (normalizedFacultyEvaluation.totalScore === '' ? (existing.score ?? '') : normalizedFacultyEvaluation.totalScore);
 
         const sanitizedMeta = normalized.meta && typeof normalized.meta === 'object'
             ? {
@@ -436,7 +581,7 @@ export const DataProvider = ({ children }) => {
             current_gpa: normalized.currentGpa === '' ? null : normalized.currentGpa,
             template_id: normalized.templateId,
             score: normalized.score === '' ? null : normalized.score,
-            faculty_feedback: normalized.facultyFeedback || '',
+            faculty_feedback: normalizedFacultyEvaluation.feedback || normalized.facultyFeedback || '',
             last_updated: normalized.lastUpdated,
         };
 
@@ -543,6 +688,132 @@ export const DataProvider = ({ children }) => {
         }));
     };
 
+    const saveFacultyEvaluation = async (studentId, evaluationInput) => {
+        if (!studentId) throw new Error('Missing student id.');
+
+        const existing = portfolios[studentId];
+        if (!existing) {
+            throw new Error('Student portfolio not found. The student must submit a portfolio before faculty can save marks.');
+        }
+
+        const normalizedFacultyEvaluation = normalizeFacultyEvaluation(
+            evaluationInput,
+            evaluationInput?.totalScore ?? existing?.score ?? '',
+            evaluationInput?.feedback ?? existing?.facultyFeedback ?? ''
+        );
+        const nextMeta = {
+            ...(existing?.meta || {}),
+            facultyEvaluation: normalizedFacultyEvaluation,
+        };
+        const nextPortfolio = {
+            ...existing,
+            meta: nextMeta,
+            score: normalizedFacultyEvaluation.totalScore,
+            facultyFeedback: normalizedFacultyEvaluation.feedback || '',
+            lastUpdated: new Date().toISOString(),
+        };
+        const cachedEvaluations = readFacultyEvaluationCache();
+        cachedEvaluations[studentId] = {
+            facultyEvaluation: normalizedFacultyEvaluation,
+            score: nextPortfolio.score,
+            facultyFeedback: nextPortfolio.facultyFeedback,
+            lastUpdated: nextPortfolio.lastUpdated,
+        };
+        writeFacultyEvaluationCache(cachedEvaluations);
+        setPortfolios((prev) => ({
+            ...prev,
+            [studentId]: nextPortfolio,
+        }));
+
+        const updateAttempts = [
+            {
+                payload: {
+                    meta: nextMeta,
+                    score: nextPortfolio.score === '' ? null : nextPortfolio.score,
+                    faculty_feedback: nextPortfolio.facultyFeedback,
+                    last_updated: nextPortfolio.lastUpdated,
+                },
+            },
+            {
+                payload: {
+                    meta: nextMeta,
+                    score: nextPortfolio.score === '' ? null : nextPortfolio.score,
+                    last_updated: nextPortfolio.lastUpdated,
+                },
+            },
+            {
+                payload: {
+                    score: nextPortfolio.score === '' ? null : nextPortfolio.score,
+                    faculty_feedback: nextPortfolio.facultyFeedback,
+                    last_updated: nextPortfolio.lastUpdated,
+                },
+            },
+            {
+                payload: {
+                    score: nextPortfolio.score === '' ? null : nextPortfolio.score,
+                    last_updated: nextPortfolio.lastUpdated,
+                },
+            },
+        ];
+
+        let lastError = null;
+        let updated = false;
+        Promise.resolve().then(async () => {
+            try {
+                const { error: rpcError } = await supabase.rpc('faculty_save_evaluation', {
+                    p_student_id: studentId,
+                    p_criteria_scores: normalizedFacultyEvaluation.criteriaScores || {},
+                    p_feedback: nextPortfolio.facultyFeedback,
+                    p_total_score: nextPortfolio.score === '' ? null : nextPortfolio.score,
+                });
+
+                if (!rpcError) {
+                    updated = true;
+                    return;
+                }
+
+                lastError = rpcError;
+            } catch (rpcError) {
+                lastError = rpcError;
+            }
+
+            if (!updated) for (const attempt of updateAttempts) {
+                const { data, error } = await supabase
+                    .from('portfolios')
+                    .update(attempt.payload)
+                    .eq('student_id', studentId)
+                    .select('student_id');
+
+                if (error) {
+                    lastError = error;
+                    const message = String(error?.message || '').toLowerCase();
+                    const missingOptionalColumn =
+                        message.includes('column')
+                        && (message.includes('meta') || message.includes('faculty_feedback'));
+
+                    if (missingOptionalColumn) {
+                        continue;
+                    }
+
+                    throw error;
+                }
+
+                if (data && data.length > 0) {
+                    updated = true;
+                    break;
+                }
+            }
+
+            if (!updated) {
+                console.warn('Faculty evaluation save fell back to local cache:', lastError);
+            }
+        }).catch((error) => {
+            console.warn('Background faculty evaluation sync failed:', error);
+        });
+
+        return nextPortfolio;
+    };
+
     const addReview = (review) => {
         const updated = [...reviews, { ...review, id: Date.now().toString(), date: new Date().toISOString() }];
         setReviews(updated);
@@ -555,6 +826,7 @@ export const DataProvider = ({ children }) => {
         // Demo portfolios for viewing templates without entering data
         if (typeof studentId === 'string' && studentId.startsWith('demo-')) {
             const templateKey = studentId.replace('demo-', '');
+            const demoTemplate = templates.find((template) => template.id === templateKey);
 
             const base = {
                 studentId,
@@ -594,6 +866,7 @@ export const DataProvider = ({ children }) => {
                     githubUrl: 'https://github.com/demo-student',
                     heroImage: '',
                     profileImage: '',
+                    facultyEvaluation: normalizeFacultyEvaluation(null, '', 'Demo feedback from faculty will appear here in the real portfolio.'),
                 },
                 familyIncome: '',
                 currentGpa: '',

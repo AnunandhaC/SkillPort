@@ -46,6 +46,7 @@ const AdminDashboard = () => {
     const [newCreateSection, setNewCreateSection] = useState({ key: '', label: '' });
     const [templateError, setTemplateError] = useState('');
     const [templateSuccess, setTemplateSuccess] = useState('');
+    const templateEditorRef = useRef(null);
 
     const loadUsers = async () => {
         setLoadingUsers(true);
