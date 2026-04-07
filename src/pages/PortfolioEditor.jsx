@@ -9,7 +9,7 @@ import PortfolioView from './PortfolioView';
 
 const PortfolioEditor = () => {
     const { user } = useAuth();
-    const { savePortfolio, templates, loading } = useData();
+    const { savePortfolio, templates, loading, getStudentPortfolio } = useData();
     const navigate = useNavigate();
 
     const normalizedProgram = String(user?.program || '')
@@ -18,6 +18,16 @@ const PortfolioEditor = () => {
         .replace(/\./g, '')
         .replace(/\s+/g, '');
     const isBArch = normalizedProgram === 'barch';
+    const getDefaultBtechTemplate = (branch) => {
+        const branchMap = {
+            cs: 'btech-cs',
+            mech: 'btech-mech',
+            eee: 'btech-eee',
+            ece: 'btech-ece',
+            robo: 'btech-robo',
+        };
+        return branchMap[String(branch || 'cs').trim().toLowerCase()] || 'btech-cs';
+    };
 
     const [formData, setFormData] = useState({
         about: '',
@@ -44,7 +54,7 @@ const PortfolioEditor = () => {
             },
             templatePages: [],
         },
-        templateId: 'modern',
+        templateId: 'btech-cs',
     });
 
     const [btechBranch, setBtechBranch] = useState('cs');
@@ -53,40 +63,130 @@ const PortfolioEditor = () => {
     const [initializedForUserId, setInitializedForUserId] = useState(null);
     const livePreviewRef = useRef(null);
     const [newSkillText, setNewSkillText] = useState('');
+    const hasInitializedAutosaveRef = useRef(false);
+    const autosaveTimerRef = useRef(null);
+    const existingPortfolio = getStudentPortfolio(user?.id);
 
     useEffect(() => {
         if (!user?.id || loading || initializedForUserId === user.id) return;
 
+        const savedPortfolio = getStudentPortfolio(user.id);
+        const savedMeta = savedPortfolio?.meta && typeof savedPortfolio.meta === 'object' ? savedPortfolio.meta : {};
+        const savedTemplateStyle = savedMeta?.templateStyle && typeof savedMeta.templateStyle === 'object'
+            ? savedMeta.templateStyle
+            : {};
+
         setFormData({
-            about: '',
-            skills: '',
-            projects: [],
-            certifications: [],
+            about: savedPortfolio?.about || '',
+            skills: Array.isArray(savedPortfolio?.skills) ? savedPortfolio.skills : [],
+            projects: Array.isArray(savedPortfolio?.projects) ? savedPortfolio.projects : [],
+            certifications: Array.isArray(savedPortfolio?.certifications) ? savedPortfolio.certifications : [],
             meta: {
-                fullName: user?.name || '',
-                role: '',
-                education: '',
-                educationYears: '',
-                experience: '',
-                experienceYears: '',
-                college: '',
-                company: '',
-                contactEmail: user?.email || '',
-                linkedinUrl: '',
-                githubUrl: '',
-                heroImage: '',
-                profileImage: '',
+                fullName: savedMeta?.fullName || user?.name || '',
+                role: savedMeta?.role || '',
+                education: savedMeta?.education || '',
+                educationYears: savedMeta?.educationYears || '',
+                experience: savedMeta?.experience || '',
+                experienceYears: savedMeta?.experienceYears || '',
+                college: savedMeta?.college || '',
+                company: savedMeta?.company || '',
+                contactEmail: savedMeta?.contactEmail || user?.email || '',
+                linkedinUrl: savedMeta?.linkedinUrl || '',
+                githubUrl: savedMeta?.githubUrl || '',
+                heroImage: savedMeta?.heroImage || '',
+                profileImage: savedMeta?.profileImage || '',
+                sectionVisibility: savedMeta?.sectionVisibility || {},
+                hideIntroOnTemplatePage: Boolean(savedMeta?.hideIntroOnTemplatePage),
+                templatePageCopies: Array.isArray(savedMeta?.templatePageCopies) ? savedMeta.templatePageCopies : [],
                 templateStyle: {
-                    fontFamily: 'default',
-                    textScale: 100,
+                    fontFamily: savedTemplateStyle?.fontFamily || 'default',
+                    textScale: Number(savedTemplateStyle?.textScale || 100),
                 },
-                templatePages: [],
+                templatePages: Array.isArray(savedMeta?.templatePages) ? savedMeta.templatePages : [],
             },
-            templateId: isBArch ? 'barch-red' : 'modern',
+            templateId: savedPortfolio?.templateId
+                || (isBArch ? 'barch-red' : getDefaultBtechTemplate(btechBranch)),
         });
 
         setInitializedForUserId(user.id);
-    }, [user?.id, user?.name, user?.email, isBArch, loading, initializedForUserId]);
+    }, [user?.id, user?.name, user?.email, isBArch, loading, initializedForUserId, btechBranch, getStudentPortfolio]);
+
+    useEffect(() => {
+        if (!user?.id || loading || initializedForUserId !== user.id || !existingPortfolio) return;
+
+        setFormData((prev) => {
+            const currentHasContent =
+                String(prev?.about || '').trim()
+                || (Array.isArray(prev?.skills) && prev.skills.length > 0)
+                || (Array.isArray(prev?.projects) && prev.projects.length > 0)
+                || (Array.isArray(prev?.certifications) && prev.certifications.length > 0);
+
+            if (currentHasContent) {
+                return prev;
+            }
+
+            return {
+                ...prev,
+                about: existingPortfolio.about || prev.about,
+                skills: Array.isArray(existingPortfolio.skills) ? existingPortfolio.skills : prev.skills,
+                projects: Array.isArray(existingPortfolio.projects) ? existingPortfolio.projects : prev.projects,
+                certifications: Array.isArray(existingPortfolio.certifications) ? existingPortfolio.certifications : prev.certifications,
+                meta: {
+                    ...(prev.meta || {}),
+                    ...(existingPortfolio.meta || {}),
+                    templateStyle: {
+                        fontFamily: existingPortfolio?.meta?.templateStyle?.fontFamily || prev?.meta?.templateStyle?.fontFamily || 'default',
+                        textScale: Number(existingPortfolio?.meta?.templateStyle?.textScale || prev?.meta?.templateStyle?.textScale || 100),
+                    },
+                },
+                templateId: existingPortfolio.templateId || prev.templateId,
+            };
+        });
+    }, [existingPortfolio, user?.id, loading, initializedForUserId]);
+
+    useEffect(() => {
+        if (isBArch) return;
+        const nextTemplateId = getDefaultBtechTemplate(btechBranch);
+        setFormData((prev) => {
+            if (prev.templateId && prev.templateId !== 'modern' && prev.templateId !== 'barch-red') {
+                return prev;
+            }
+            if (prev.templateId === nextTemplateId) {
+                return prev;
+            }
+            return {
+                ...prev,
+                templateId: nextTemplateId,
+            };
+        });
+    }, [isBArch, btechBranch]);
+
+    useEffect(() => {
+        if (!user?.id || loading || initializedForUserId !== user.id) return undefined;
+
+        if (!hasInitializedAutosaveRef.current) {
+            hasInitializedAutosaveRef.current = true;
+            return undefined;
+        }
+
+        if (autosaveTimerRef.current) {
+            clearTimeout(autosaveTimerRef.current);
+        }
+
+        autosaveTimerRef.current = setTimeout(async () => {
+            try {
+                await savePortfolio(user.id, buildPortfolioPayload());
+            } catch (error) {
+                console.error('Autosave failed:', error);
+            }
+        }, 1200);
+
+        return () => {
+            if (autosaveTimerRef.current) {
+                clearTimeout(autosaveTimerRef.current);
+            }
+        };
+    }, [formData, user?.id, loading, initializedForUserId]);
 
     const buildPortfolioPayload = () => ({
         ...formData,
@@ -94,8 +194,8 @@ const PortfolioEditor = () => {
             ? String(formData.templateId || '').startsWith('barch-')
                 ? formData.templateId
                 : 'barch-red'
-            : formData.templateId === 'barch-red'
-                ? 'modern'
+            : (formData.templateId === 'barch-red' || formData.templateId === 'modern')
+                ? getDefaultBtechTemplate(btechBranch)
                 : formData.templateId,
         meta: {
             ...formData.meta,
@@ -256,7 +356,7 @@ const PortfolioEditor = () => {
             ...prev,
             projects: [
                 ...(prev.projects || []),
-                { title: 'New Project', desc: 'Edit this project details', tech: '', year: '', image: '', repoUrl: '', pdfUrl: '', pdfName: '' },
+                { title: 'New Project', desc: 'Edit this project description' },
             ],
         }));
     };
@@ -312,7 +412,7 @@ const PortfolioEditor = () => {
     const addCertification = () => {
         setFormData((prev) => ({
             ...prev,
-            certifications: [...(Array.isArray(prev.certifications) ? prev.certifications : []), { name: 'New Certification', issuer: 'Issuer' }],
+            certifications: [...(Array.isArray(prev.certifications) ? prev.certifications : []), { name: 'New Certification', image: '' }],
         }));
     };
 
@@ -360,6 +460,7 @@ const PortfolioEditor = () => {
         .filter((t) => (isBArch ? t.group === 'barch' : t.group && !String(t.group).startsWith('barch')))
         .filter((t) => {
             if (isBArch) return true;
+            if (t.id === 'modern') return false;
             if (!t.branch) return true;
             return t.branch === btechBranch;
         });
@@ -562,13 +663,6 @@ const PortfolioEditor = () => {
                                 </div>
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                <button
-                                    type="button"
-                                    onClick={addTemplatePage}
-                                    className="inline-flex items-center gap-2 text-sm bg-blue-600 px-3 py-1 rounded text-white"
-                                >
-                                    <Plus size={14} /> Add Page
-                                </button>
                                 <button
                                     type="button"
                                     onClick={handleDownloadTemplate}

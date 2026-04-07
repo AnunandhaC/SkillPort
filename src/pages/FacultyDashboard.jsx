@@ -1,202 +1,142 @@
-import React, { useState } from 'react';
-import { useData } from '../context/DataProvider';
-import { User, ExternalLink, Save } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useData, FACULTY_EVALUATION_CRITERIA } from '../context/DataProvider';
+import { supabase } from '../lib/supabaseClient';
+import { ChevronRight, ExternalLink, User } from 'lucide-react';
 
 const FacultyDashboard = () => {
-    const { getAllPortfolios, addReview, savePortfolio, refreshPortfolios } = useData();
+    const navigate = useNavigate();
+    const { getAllPortfolios } = useData();
     const portfolios = getAllPortfolios();
-    const [selectedStudent, setSelectedStudent] = useState(null);
-    const [feedback, setFeedback] = useState('');
-    const [score, setScore] = useState('');
-    const [submitting, setSubmitting] = useState(false);
-    const [submitError, setSubmitError] = useState('');
-    const [submitSuccess, setSubmitSuccess] = useState('');
-    const SAVE_TIMEOUT_MS = 15000;
+    const [profileNames, setProfileNames] = useState({});
 
-    const withTimeout = (promise, ms) =>
-        Promise.race([
-            promise,
-            new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Saving evaluation timed out. Please check Supabase policies/migrations and try again.')), ms)
-            ),
-        ]);
+    useEffect(() => {
+        let cancelled = false;
 
-    const handleSubmitReview = async (e) => {
-        e.preventDefault();
-        setSubmitError('');
-        setSubmitSuccess('');
+        const loadProfileNames = async () => {
+            const studentIds = portfolios
+                .map((portfolio) => String(portfolio?.studentId || '').trim())
+                .filter(Boolean);
 
-        if (!selectedStudent) {
-            setSubmitError('Please select a student before submitting.');
-            return;
-        }
+            if (studentIds.length === 0) {
+                if (!cancelled) setProfileNames({});
+                return;
+            }
 
-        const parsedScore = Number(score);
-        if (!Number.isFinite(parsedScore) || parsedScore < 0 || parsedScore > 100) {
-            setSubmitError('Score must be a number between 0 and 100.');
-            return;
-        }
+            try {
+                const { data, error } = await supabase
+                    .from('profiles')
+                    .select('id, full_name')
+                    .in('id', studentIds);
 
-        if (!feedback.trim()) {
-            setSubmitError('Please enter constructive feedback.');
-            return;
-        }
+                if (error) throw error;
 
-        try {
-            setSubmitting(true);
+                const nextNames = (data || []).reduce((acc, profile) => {
+                    const id = String(profile?.id || '').trim();
+                    if (!id) return acc;
+                    acc[id] = String(profile?.full_name || '').trim();
+                    return acc;
+                }, {});
 
-            // UC3: Store Feedback
-            addReview({
-                studentId: selectedStudent.studentId,
-                comments: feedback.trim(),
-                rating: parsedScore,
-                reviewer: 'Faculty'
-            });
+                if (!cancelled) setProfileNames(nextNames);
+            } catch (error) {
+                console.error('Failed to load student names for faculty dashboard:', error);
+                if (!cancelled) setProfileNames({});
+            }
+        };
 
-            // UC6: Assign Score (Updating the portfolio directly for simplicity)
-            await withTimeout(savePortfolio(selectedStudent.studentId, {
-                ...selectedStudent,
-                score: parsedScore,
-                facultyFeedback: feedback.trim(),
-            }), SAVE_TIMEOUT_MS);
-            await refreshPortfolios();
-        } catch (error) {
-            const message = error?.message || 'Failed to save evaluation.';
-            const hint = message.includes('column "faculty_feedback" of relation "portfolios" does not exist')
-                ? ' Run supabase/migrations/007_add_faculty_feedback_to_portfolios.sql in Supabase SQL Editor.'
-                : '';
-            setSubmitError(`${message}.${hint}`);
-            return;
-        } finally {
-            setSubmitting(false);
-        }
+        loadProfileNames();
 
-        setSubmitSuccess('Evaluation submitted successfully.');
-        setFeedback('');
-        setScore('');
-        setSelectedStudent(null);
+        return () => {
+            cancelled = true;
+        };
+    }, [portfolios]);
+
+    const portfoliosWithDisplayNames = useMemo(() => (
+        portfolios.map((portfolio) => ({
+            ...portfolio,
+            displayName: String(
+                portfolio?.meta?.fullName
+                || profileNames?.[portfolio?.studentId]
+                || ''
+            ).trim() || 'Unnamed Student',
+        }))
+    ), [portfolios, profileNames]);
+
+    const getEvaluationSummary = (portfolio) => {
+        const evaluation = portfolio?.meta?.facultyEvaluation;
+        const totalScore = evaluation?.totalScore ?? portfolio?.score ?? '';
+        const completedCriteria = FACULTY_EVALUATION_CRITERIA.filter((criterion) => {
+            const value = evaluation?.criteriaScores?.[criterion.key];
+            return value !== '' && value !== null && value !== undefined;
+        }).length;
+
+        return {
+            totalScore,
+            completedCriteria,
+            isReviewed: totalScore !== '' && totalScore !== null && totalScore !== undefined,
+        };
     };
 
     return (
         <div className="space-y-8">
             <div>
                 <h1 className="text-3xl font-bold text-white mb-2">Faculty Dashboard</h1>
-                <p className="text-slate-400">Review student portfolios and provide evaluations.</p>
+                <p className="text-slate-400">Open a student review page, assign marks across 5 criteria, and edit saved evaluations anytime.</p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Student List */}
-                <div className="lg:col-span-1 space-y-4">
-                    <h2 className="text-xl font-bold text-white mb-4">Pending Reviews</h2>
-                    {portfolios.length === 0 ? (
-                        <p className="text-slate-500">No portfolios submitted yet.</p>
-                    ) : (
-                        portfolios.map(p => (
-                            <div
-                                key={p.studentId}
-                                onClick={() => setSelectedStudent(p)}
-                                className={`p-4 rounded-xl border cursor-pointer transition-all ${selectedStudent?.studentId === p.studentId ? 'bg-blue-600/20 border-blue-500' : 'bg-white/5 border-white/10 hover:bg-white/10'}`}
-                            >
-                                <div className="flex items-center gap-3 mb-2">
-                                    <div className="w-10 h-10 rounded-full bg-slate-700 flex items-center justify-center">
-                                        <User size={20} className="text-slate-300" />
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                {portfoliosWithDisplayNames.length === 0 ? (
+                    <div className="glass-panel p-10 rounded-2xl text-slate-400">
+                        No student portfolios have been submitted yet.
+                    </div>
+                ) : portfoliosWithDisplayNames.map((portfolio) => {
+                    const summary = getEvaluationSummary(portfolio);
+                    return (
+                        <button
+                            key={portfolio.studentId}
+                            type="button"
+                            onClick={() => navigate(`/faculty-evaluation/${portfolio.studentId}`)}
+                            className="glass-card rounded-2xl border border-white/10 p-6 text-left transition hover:border-blue-500/50 hover:bg-white/10"
+                        >
+                            <div className="flex items-start justify-between gap-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-700">
+                                        <User size={20} className="text-slate-200" />
                                     </div>
                                     <div>
-                                        <h3 className="font-bold text-white">Student ID: {p.studentId}</h3>
-                                        <p className="text-xs text-slate-400">Last updated: {new Date(p.lastUpdated).toLocaleDateString()}</p>
+                                        <h2 className="text-lg font-bold text-white">{portfolio.displayName}</h2>
+                                        <p className="text-xs text-slate-400">Student ID: {portfolio.studentId}</p>
                                     </div>
                                 </div>
-                                <div className="flex justify-between items-center text-sm">
-                                    <span className="text-slate-400">{p.projects?.length || 0} Projects</span>
-                                    <span className={p.score ? "text-green-400" : "text-yellow-400"}>
-                                        {p.score ? `Score: ${p.score}` : 'Pending Score'}
-                                    </span>
-                                </div>
-                            </div>
-                        ))
-                    )}
-                </div>
-
-                {/* Review Area */}
-                <div className="lg:col-span-2 glass-panel p-6 rounded-2xl min-h-[400px]">
-                    {!selectedStudent ? (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-500">
-                            <User size={48} className="mb-4 opacity-50" />
-                            <p>Select a student to review</p>
-                        </div>
-                    ) : (
-                        <div className="space-y-6">
-                            <div className="flex justify-between items-start border-b border-white/10 pb-6">
-                                <div>
-                                    <h2 className="text-2xl font-bold text-white mb-2">Portfolio Review</h2>
-                                    <p className="text-slate-400 text-sm max-w-lg">{selectedStudent.about}</p>
-                                </div>
-                                <a
-                                    href={`/portfolio/view/${selectedStudent.studentId}`}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition"
-                                >
-                                    <ExternalLink size={16} />
-                                    Open Website
-                                </a>
+                                <ChevronRight size={20} className="text-slate-400" />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-white/5 p-4 rounded-xl">
-                                    <h3 className="text-sm font-bold text-slate-300 mb-2">Projects</h3>
-                                    <ul className="list-disc pl-4 space-y-1 text-slate-400 text-sm">
-                                        {selectedStudent.projects?.map((p, i) => <li key={i}>{p.title}</li>)}
-                                    </ul>
+                            <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+                                <div className="rounded-xl bg-white/5 p-3">
+                                    <div className="text-slate-400">Projects</div>
+                                    <div className="mt-1 text-white font-semibold">{portfolio.projects?.length || 0}</div>
                                 </div>
-                                <div className="bg-white/5 p-4 rounded-xl">
-                                    <h3 className="text-sm font-bold text-slate-300 mb-2">Skills</h3>
-                                    <p className="text-slate-400 text-sm">{selectedStudent.skills}</p>
+                                <div className="rounded-xl bg-white/5 p-3">
+                                    <div className="text-slate-400">Marks</div>
+                                    <div className={`mt-1 font-semibold ${summary.isReviewed ? 'text-green-400' : 'text-yellow-400'}`}>
+                                        {summary.isReviewed ? `${summary.totalScore}/100` : 'Pending'}
+                                    </div>
                                 </div>
                             </div>
 
-                            <form onSubmit={handleSubmitReview} className="space-y-4 pt-4 border-t border-white/10">
-                                <h3 className="text-lg font-bold text-white">Evaluation</h3>
+                            <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
+                                <span>{summary.completedCriteria}/5 criteria filled</span>
+                                <span>{summary.isReviewed ? 'Edit review' : 'Start review'}</span>
+                            </div>
 
-                                <div>
-                                    <label className="block text-sm text-slate-400 mb-1">Score (0-100)</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        max="100"
-                                        required
-                                        value={score}
-                                        onChange={(e) => setScore(e.target.value)}
-                                        className="bg-slate-900/50 border border-slate-700 rounded-lg px-4 py-2 text-white w-32"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-sm text-slate-400 mb-1">Constructive Feedback</label>
-                                    <textarea
-                                        rows={4}
-                                        required
-                                        value={feedback}
-                                        onChange={(e) => setFeedback(e.target.value)}
-                                        className="w-full bg-slate-900/50 border border-slate-700 rounded-lg p-3 text-white"
-                                        placeholder="Enter specific feedback on projects and presentation..."
-                                    />
-                                </div>
-
-                                <button
-                                    type="submit"
-                                    disabled={submitting}
-                                    className="flex items-center gap-2 bg-green-600 hover:bg-green-500 disabled:opacity-60 disabled:cursor-not-allowed text-white px-6 py-2 rounded-lg font-medium transition"
-                                >
-                                    <Save size={18} />
-                                    {submitting ? 'Submitting...' : 'Submit Evaluation'}
-                                </button>
-                                {submitError && <p className="text-sm text-red-400">{submitError}</p>}
-                                {submitSuccess && <p className="text-sm text-green-400">{submitSuccess}</p>}
-                            </form>
-                        </div>
-                    )}
-                </div>
+                            <div className="mt-5 flex items-center gap-2 text-sm text-blue-300">
+                                <ExternalLink size={14} />
+                                <span>Open evaluation page</span>
+                            </div>
+                        </button>
+                    );
+                })}
             </div>
         </div>
     );

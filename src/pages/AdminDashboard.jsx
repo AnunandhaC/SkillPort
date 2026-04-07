@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { DEFAULT_TEMPLATE_SECTIONS, useData } from '../context/DataProvider';
 import { useAuth } from '../context/AuthProvider';
 import { supabase } from '../lib/supabaseClient';
@@ -71,6 +71,7 @@ const AdminDashboard = () => {
     const [newCreateSection, setNewCreateSection] = useState({ key: '', label: '' });
     const [templateError, setTemplateError] = useState('');
     const [templateSuccess, setTemplateSuccess] = useState('');
+    const templateEditorRef = useRef(null);
 
     const loadUsers = async () => {
         setLoadingUsers(true);
@@ -135,6 +136,9 @@ const AdminDashboard = () => {
                     enabled: section?.enabled !== false,
                 })),
         });
+        window.setTimeout(() => {
+            templateEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 50);
     };
 
     const cancelEditingTemplate = () => {
@@ -162,6 +166,9 @@ const AdminDashboard = () => {
             sections: DEFAULT_TEMPLATE_SECTIONS,
         });
         setNewCreateSection({ key: '', label: '' });
+        window.setTimeout(() => {
+            templateEditorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 50);
     };
 
     const cancelCreatingTemplate = () => {
@@ -222,14 +229,14 @@ const AdminDashboard = () => {
     };
 
     const openTemplatePreview = ({ templateId, baseTemplateId, templateName, themeColor, backgroundColor, sections }) => {
-        const safeTemplateId = String(templateId || '').trim() || 'preview-template';
+        const safeTemplateId = String(templateId || '').trim() || `preview_template_${Date.now()}`;
         const safeBaseTemplateId = String(baseTemplateId || '').trim();
         if (!safeBaseTemplateId) {
             setTemplateError('Please choose a valid template for preview.');
             return;
         }
 
-        const previewId = `demo-${safeBaseTemplateId}`;
+        const previewId = `demo-${safeTemplateId}`;
         const normalizedSections = (Array.isArray(sections) ? sections : []).map((section) => ({
             key: normalizeSectionKey(section?.key),
             label: String(section?.label || '').trim(),
@@ -238,7 +245,7 @@ const AdminDashboard = () => {
         const { sectionVisibility, customSections } = buildPreviewMeta(normalizedSections);
 
         const previewPayload = {
-            templateId: safeBaseTemplateId,
+            templateId: safeTemplateId,
             meta: {
                 sectionVisibility,
                 customSections,
@@ -377,7 +384,6 @@ const AdminDashboard = () => {
                 name: templateForm.name.trim(),
                 description: templateForm.description.trim(),
                 baseTemplateId: templateForm.baseTemplateId,
-                themeColor: templateForm.themeColor,
                 backgroundColor: templateForm.backgroundColor,
                 sections: templateForm.sections.map((section) => ({
                     key: normalizeSectionKey(section.key),
@@ -428,7 +434,6 @@ const AdminDashboard = () => {
                     ? normalizeSectionKey(createTemplateForm.branch)
                     : '',
                 baseTemplateId: createTemplateForm.previewTemplateId,
-                themeColor: createTemplateForm.themeColor,
                 backgroundColor: createTemplateForm.backgroundColor,
                 sections: createTemplateForm.sections.map((section) => ({
                     key: normalizeSectionKey(section.key),
@@ -648,7 +653,7 @@ const AdminDashboard = () => {
             )}
 
             {activeTab === 'templates' && editingTemplateId && (
-                <div className="glass-panel rounded-xl p-6">
+                <div ref={templateEditorRef} className="glass-panel rounded-xl p-6">
                     <h2 className="text-xl font-bold text-white mb-4">Edit Template</h2>
                     <form onSubmit={handleSaveTemplate} className="space-y-4">
                         <div>
@@ -671,7 +676,7 @@ const AdminDashboard = () => {
                             />
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div>
                                 <label className="block text-sm text-slate-400 mb-1">Base Template Layout</label>
                                 <select
@@ -683,15 +688,6 @@ const AdminDashboard = () => {
                                         <option key={template.id} value={template.id}>{template.label}</option>
                                     ))}
                                 </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm text-slate-400 mb-1">Template Color</label>
-                                <input
-                                    type="color"
-                                    value={templateForm.themeColor}
-                                    onChange={(e) => setTemplateForm((prev) => ({ ...prev, themeColor: e.target.value }))}
-                                    className="h-[42px] w-full bg-slate-900/50 border border-slate-700 rounded-lg px-2 py-1 text-white outline-none focus:ring-2 focus:ring-blue-500"
-                                />
                             </div>
                             <div>
                                 <label className="block text-sm text-slate-400 mb-1">Background Color</label>
@@ -848,15 +844,6 @@ const AdminDashboard = () => {
                             </select>
                         </div>
 
-                        <div>
-                            <label className="block text-sm text-slate-400 mb-1">Template Color</label>
-                            <input
-                                type="color"
-                                value={createTemplateForm.themeColor}
-                                onChange={(e) => setCreateTemplateForm((prev) => ({ ...prev, themeColor: e.target.value }))}
-                                className="h-[42px] w-full bg-slate-900/50 border border-slate-700 rounded-lg px-2 py-1 text-white outline-none focus:ring-2 focus:ring-blue-500"
-                            />
-                        </div>
                         <div>
                             <label className="block text-sm text-slate-400 mb-1">Background Color</label>
                             <input

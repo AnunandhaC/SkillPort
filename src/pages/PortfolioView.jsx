@@ -73,11 +73,35 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
 
     const {
         about,
-        skills,
-        projects,
-        certifications,
+        skills: rawSkills,
+        projects: rawProjects,
+        certifications: rawCertifications,
         templateId: rawTemplateId,
     } = portfolio;
+    const skills = Array.isArray(rawSkills) ? rawSkills.filter((item) => item !== null && item !== undefined).map((item) => String(item)) : [];
+    const projects = Array.isArray(rawProjects)
+        ? rawProjects.filter((item) => item && typeof item === 'object').map((item) => ({
+            title: String(item?.title || ''),
+            desc: String(item?.desc || ''),
+            tech: String(item?.tech || ''),
+            year: String(item?.year || ''),
+            image: String(item?.image || ''),
+            imageUrl: String(item?.imageUrl || ''),
+            repoUrl: String(item?.repoUrl || ''),
+            pdfUrl: String(item?.pdfUrl || ''),
+            pdfName: String(item?.pdfName || ''),
+        }))
+        : [];
+    const certifications = Array.isArray(rawCertifications)
+        ? rawCertifications.filter((item) => item && typeof item === 'object').map((item) => ({
+            name: String(item?.name || ''),
+            issuer: '',
+            image: '',
+        }))
+        : [];
+    const renderCertificationContent = (certification, imageClassName = 'h-16 w-16 rounded-lg object-cover border border-white/10', textClassName = 'text-slate-500') => {
+        return null;
+    };
     const globalMeta = portfolio?.meta && typeof portfolio.meta === 'object' ? portfolio.meta : {};
     const hideIntroOnTemplatePage = Boolean(globalMeta?.hideIntroOnTemplatePage);
     const currentTemplate = previewTemplateConfig || (Array.isArray(templates)
@@ -549,11 +573,6 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                 {
                     title: `Project ${(Array.isArray(prev.projects) ? prev.projects.length : 0) + 1}`,
                     desc: 'Edit project description',
-                    tech: '',
-                    year: '',
-                    image: '',
-                    repoUrl: '',
-                    pdfUrl: '',
                 },
             ],
         }));
@@ -565,7 +584,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             ...prev,
             certifications: [
                 ...(Array.isArray(prev.certifications) ? prev.certifications : []),
-                { name: 'New Certification', issuer: 'Issuer' },
+                { name: 'New Certification', image: '' },
             ],
         }));
     };
@@ -797,9 +816,6 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
     }, [isEditable, templateId, projects?.length, skills?.length, certifications?.length, editorScopeId]);
 
     useEffect(() => {
-        // Apply saved text overrides in read-only mode only.
-        // In edit mode we rely exclusively on EditableText to avoid DOM rewrite conflicts.
-        if (isEditable) return undefined;
         const scope = (editorScopeId && document.getElementById(editorScopeId)) || document.body;
         if (!scope) return undefined;
 
@@ -810,11 +826,88 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
             const key = node.getAttribute('data-dps-text-key');
             if (!key) return;
             if (typeof textOverrides[key] === 'string' && document.activeElement !== node) {
-                node.innerText = textOverrides[key];
+                node.textContent = textOverrides[key];
             }
         });
         return undefined;
     }, [isEditable, globalMeta?.textOverrides, editorScopeId]);
+
+    useEffect(() => {
+        const scope = (editorScopeId && document.getElementById(editorScopeId)) || document.body;
+        if (!scope) return undefined;
+
+        const candidates = Array.from(scope.querySelectorAll('h1,h2,h3,h4,h5,h6,p,span,li,blockquote,footer,a,div'));
+        const tracked = [];
+
+        candidates.forEach((node, index) => {
+            if (!(node instanceof HTMLElement)) return;
+            if (node.dataset.dpsNoInlineEdit === '1') return;
+            if (node.getAttribute('contenteditable') === 'true') return;
+            if (node.closest('[data-dps-no-inline-edit="1"]')) return;
+            if (node.children.length > 0) return;
+
+            const text = String(node.textContent || '').trim();
+            if (!text) return;
+            if (text.length > 160) return;
+
+            const key = node.dataset.dpsTextKey || `auto_${node.tagName.toLowerCase()}_${index}`;
+            node.dataset.dpsTextKey = key;
+
+            const saved = globalMeta?.textOverrides?.[key];
+            if (typeof saved === 'string' && document.activeElement !== node && node.textContent !== saved) {
+                node.textContent = saved;
+            }
+
+            if (!isEditable) return;
+
+            node.setAttribute('contenteditable', 'true');
+            node.setAttribute('spellcheck', 'false');
+            node.classList.add('outline-none');
+
+            const handleFocus = () => {
+                node.dataset.dpsEditing = '1';
+            };
+
+            const handleBlur = () => {
+                delete node.dataset.dpsEditing;
+                const nextText = String(node.textContent || '').trim();
+                onPortfolioChange((prev) => ({
+                    ...prev,
+                    meta: {
+                        ...(prev?.meta || {}),
+                        textOverrides: {
+                            ...(prev?.meta?.textOverrides || {}),
+                            [key]: nextText || text,
+                        },
+                    },
+                }));
+            };
+
+            const handleKeyDown = (event) => {
+                if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Escape') {
+                    event.preventDefault();
+                    node.blur();
+                }
+            };
+
+            node.addEventListener('focus', handleFocus);
+            node.addEventListener('blur', handleBlur);
+            node.addEventListener('keydown', handleKeyDown);
+            tracked.push({ node, handleFocus, handleBlur, handleKeyDown });
+        });
+
+        return () => {
+            tracked.forEach(({ node, handleFocus, handleBlur, handleKeyDown }) => {
+                node.removeEventListener('focus', handleFocus);
+                node.removeEventListener('blur', handleBlur);
+                node.removeEventListener('keydown', handleKeyDown);
+                node.removeAttribute('contenteditable');
+                node.removeAttribute('spellcheck');
+                node.classList.remove('outline-none');
+                delete node.dataset.dpsEditing;
+            });
+        };
+    }, [isEditable, globalMeta?.textOverrides, onPortfolioChange, editorScopeId, templateId]);
 
     useEffect(() => {
         if (!isEditable) return undefined;
@@ -962,8 +1055,6 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                 )}
                 {showImage && image ? (
                     <img src={image} alt={p?.title || 'Project'} className="w-full h-48 object-cover rounded-xl border border-white/10" />
-                ) : showImage ? (
-                    <div className={`text-xs ${textClass}`}>No project image added.</div>
                 ) : null}
             </div>
         );
@@ -1068,7 +1159,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="flex items-center justify-between border-b py-4">
                                 <span className="font-medium">{c.name}</span>
-                                <span className="text-slate-500">{c.issuer}</span>
+                                {renderCertificationContent(c)}
                             </div>
                         ))}
                     </div>
@@ -1229,11 +1320,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                                                     className="w-full h-auto mx-auto rounded-lg max-h-[250px] object-cover transition-transform duration-300 hover:scale-105"
                                                 />
                                             </a>
-                                        ) : (
-                                            <div className="w-full h-[220px] rounded-lg bg-[#dcd7cb] flex items-center justify-center text-[#6f6655] text-sm">
-                                                Add Project Image URL
-                                            </div>
-                                        )}
+                                        ) : null}
                                         <EditableText as="h4" className="mt-2 font-normal text-sm sm:text-base" value={p.title || `Project ${i + 1}`} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
                                         <p className="text-xs sm:text-sm">{p.year || ''}</p>
                                     </div>
@@ -1325,7 +1412,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-slate-800 border-l-4 border-blue-500 p-4 rounded">
                                 <h4 className="font-bold text-white">{c.name}</h4>
-                                <p className="text-slate-400 text-sm">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-white/10', 'text-slate-400 text-sm')}</div>
                             </div>
                         ))}
                     </div>
@@ -1407,7 +1494,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-blue-100 border-l-4 border-blue-600 p-4 rounded">
                                 <h4 className="font-bold text-blue-900">{c.name}</h4>
-                                <p className="text-blue-700">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-blue-200', 'text-blue-700')}</div>
                             </div>
                         ))}
                     </div>
@@ -1425,19 +1512,53 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
         const college = meta.college || 'Computer Science Department';
         const company = meta.company || 'Open for Internship';
         const contactEmail = meta.contactEmail || 'contact@example.com';
+        const defaultServiceItems = [
+            { title: 'Web Development', text: 'Building responsive web interfaces and scalable apps.' },
+            { title: 'UI/UX Design', text: 'Designing clean and accessible user experiences.' },
+            { title: 'Backend APIs', text: 'Developing APIs, authentication, and database flows.' },
+        ];
+        const defaultTestimonials = [
+            { name: 'Faculty Mentor', text: 'Strong problem-solving skills and consistent project delivery.' },
+            { name: 'Project Teammate', text: 'Great collaborator with excellent frontend implementation skills.' },
+        ];
         const serviceItems = Array.isArray(meta.uniconsServices) && meta.uniconsServices.length > 0
-            ? meta.uniconsServices
-            : [
-                { title: 'Web Development', text: 'Building responsive web interfaces and scalable apps.' },
-                { title: 'UI/UX Design', text: 'Designing clean and accessible user experiences.' },
-                { title: 'Backend APIs', text: 'Developing APIs, authentication, and database flows.' },
-            ];
+            ? meta.uniconsServices.filter((item) => item && typeof item === 'object')
+            : defaultServiceItems;
         const testimonials = Array.isArray(meta.uniconsTestimonials) && meta.uniconsTestimonials.length > 0
-            ? meta.uniconsTestimonials
-            : [
-                { name: 'Faculty Mentor', text: 'Strong problem-solving skills and consistent project delivery.' },
-                { name: 'Project Teammate', text: 'Great collaborator with excellent frontend implementation skills.' },
-            ];
+            ? meta.uniconsTestimonials.filter((item) => item && typeof item === 'object')
+            : defaultTestimonials;
+        const setMetaList = (key, nextList) => {
+            if (!isEditable) return;
+            onPortfolioChange((prev) => ({
+                ...prev,
+                meta: {
+                    ...(prev.meta || {}),
+                    [key]: nextList,
+                },
+            }));
+        };
+        const updateUniconsService = (index, patch) => {
+            const next = [...serviceItems];
+            next[index] = { ...(next[index] || {}), ...patch };
+            setMetaList('uniconsServices', next);
+        };
+        const addUniconsService = () => {
+            setMetaList('uniconsServices', [...serviceItems, { title: 'New Service', text: 'Describe this service.' }]);
+        };
+        const removeUniconsService = (index) => {
+            setMetaList('uniconsServices', serviceItems.filter((_, i) => i !== index));
+        };
+        const updateUniconsTestimonial = (index, patch) => {
+            const next = [...testimonials];
+            next[index] = { ...(next[index] || {}), ...patch };
+            setMetaList('uniconsTestimonials', next);
+        };
+        const addUniconsTestimonial = () => {
+            setMetaList('uniconsTestimonials', [...testimonials, { name: 'New Person', text: 'Add testimonial text.' }]);
+        };
+        const removeUniconsTestimonial = (index) => {
+            setMetaList('uniconsTestimonials', testimonials.filter((_, i) => i !== index));
+        };
         const sectionVisibility = {
             home: !hideIntroOnTemplatePage && (meta?.uniconsSections?.home !== false),
             about: showSection('about'),
@@ -1486,6 +1607,16 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         <section className="skills section bg-white rounded-2xl border border-slate-200 p-8" id="skills">
                             <div className="flex items-center justify-between gap-3 mb-4">
                                 <h2 className="text-2xl font-bold">Skills</h2>
+                                {isEditable && (
+                                    <button
+                                        type="button"
+                                        data-dps-no-inline-edit="1"
+                                        onClick={() => addSkillItem('New Skill')}
+                                        className="rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-500"
+                                    >
+                                        Add Skill
+                                    </button>
+                                )}
                             </div>
                             <div className="flex flex-wrap gap-2">
                                 {(skills || []).map((s, i) => (
@@ -1499,8 +1630,21 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                                         ) : (
                                             <span>{s}</span>
                                         )}
+                                        {isEditable && (
+                                            <button
+                                                type="button"
+                                                data-dps-no-inline-edit="1"
+                                                onClick={() => removeSkillItem(i)}
+                                                className="text-xs text-red-600 hover:text-red-500"
+                                            >
+                                                Remove
+                                            </button>
+                                        )}
                                     </span>
                                 ))}
+                                {isEditable && (!Array.isArray(skills) || skills.length === 0) && (
+                                    <p className="text-sm text-slate-500">Add your first skill to start editing this section.</p>
+                                )}
                             </div>
                         </section>
                     )}
@@ -1527,14 +1671,34 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         <section className="services section bg-white rounded-2xl border border-slate-200 p-8" id="services">
                             <div className="flex items-center justify-between gap-3 mb-4">
                                 <h2 className="text-2xl font-bold">Services</h2>
+                                {isEditable && (
+                                    <button
+                                        type="button"
+                                        data-dps-no-inline-edit="1"
+                                        onClick={addUniconsService}
+                                        className="rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-500"
+                                    >
+                                        Add Service
+                                    </button>
+                                )}
                             </div>
                             <div className="grid md:grid-cols-3 gap-4">
                                 {serviceItems.map((srv, i) => (
                                     <article key={`${srv.title}-${i}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                                         <div className="flex items-start justify-between gap-2">
-                                            <EditableText as="h3" className="font-semibold" value={srv.title} placeholder="Service title" onCommit={(v) => updateMetaListItem('uniconsServices', i, { title: v })} />
+                                            <EditableText as="h3" className="font-semibold" value={srv.title} placeholder="Service title" onCommit={(v) => updateUniconsService(i, { title: v })} />
+                                            {isEditable && (
+                                                <button
+                                                    type="button"
+                                                    data-dps-no-inline-edit="1"
+                                                    onClick={() => removeUniconsService(i)}
+                                                    className="text-xs text-red-600 hover:text-red-500"
+                                                >
+                                                    Remove
+                                                </button>
+                                            )}
                                         </div>
-                                        <EditableText as="p" className="text-sm text-slate-600 mt-2" value={srv.text} placeholder="Service description" onCommit={(v) => updateMetaListItem('uniconsServices', i, { text: v })} />
+                                        <EditableText as="p" className="text-sm text-slate-600 mt-2" value={srv.text} placeholder="Service description" onCommit={(v) => updateUniconsService(i, { text: v })} />
                                     </article>
                                 ))}
                             </div>
@@ -1545,12 +1709,32 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         <section className="portfolio section bg-white rounded-2xl border border-slate-200 p-8" id="portfolio">
                             <div className="flex items-center justify-between gap-3 mb-4">
                                 <h2 className="text-2xl font-bold">Portfolio</h2>
+                                {isEditable && (
+                                    <button
+                                        type="button"
+                                        data-dps-no-inline-edit="1"
+                                        onClick={addProjectGlobal}
+                                        className="rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-500"
+                                    >
+                                        Add Project
+                                    </button>
+                                )}
                             </div>
                             <div className="grid md:grid-cols-2 gap-5">
                                 {projects.map((p, i) => (
                                     <article key={i} className="rounded-xl border border-slate-200 p-5">
                                         <div className="flex items-start justify-between gap-2">
                                             <EditableText as="h3" className="text-xl font-semibold" value={p.title || `Project ${i + 1}`} placeholder={`Project ${i + 1}`} onCommit={(v) => commitProject(i, 'title', v)} />
+                                            {isEditable && (
+                                                <button
+                                                    type="button"
+                                                    data-dps-no-inline-edit="1"
+                                                    onClick={() => removeProjectItem(i)}
+                                                    className="text-xs text-red-600 hover:text-red-500"
+                                                >
+                                                    Remove
+                                                </button>
+                                            )}
                                         </div>
                                         <EditableText as="p" className="text-slate-600 mt-2" value={p.desc} placeholder="Describe this project." onCommit={(v) => commitProject(i, 'desc', v)} />
                                         <ProjectAttachments p={p} />
@@ -1577,14 +1761,34 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         <section className="testimonial section bg-white rounded-2xl border border-slate-200 p-8">
                             <div className="flex items-center justify-between gap-3 mb-4">
                                 <h2 className="text-2xl font-bold">Testimonial</h2>
+                                {isEditable && (
+                                    <button
+                                        type="button"
+                                        data-dps-no-inline-edit="1"
+                                        onClick={addUniconsTestimonial}
+                                        className="rounded-full bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-500"
+                                    >
+                                        Add Testimonial
+                                    </button>
+                                )}
                             </div>
                             <div className="grid md:grid-cols-2 gap-4">
                                 {testimonials.map((t, i) => (
                                     <blockquote key={`${t.name}-${i}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
                                         <div className="flex items-start justify-between gap-2">
-                                            <EditableText as="p" className="text-slate-700" value={t.text} placeholder="Testimonial text" onCommit={(v) => updateMetaListItem('uniconsTestimonials', i, { text: v })} />
+                                            <EditableText as="p" className="text-slate-700" value={t.text} placeholder="Testimonial text" onCommit={(v) => updateUniconsTestimonial(i, { text: v })} />
+                                            {isEditable && (
+                                                <button
+                                                    type="button"
+                                                    data-dps-no-inline-edit="1"
+                                                    onClick={() => removeUniconsTestimonial(i)}
+                                                    className="text-xs text-red-600 hover:text-red-500"
+                                                >
+                                                    Remove
+                                                </button>
+                                            )}
                                         </div>
-                                        <EditableText as="footer" className="text-sm text-slate-500 mt-2" value={`- ${t.name || 'Name'}`} placeholder="- Name" onCommit={(v) => updateMetaListItem('uniconsTestimonials', i, { name: String(v).replace(/^-+\s*/, '') })} />
+                                        <EditableText as="footer" className="text-sm text-slate-500 mt-2" value={`- ${t.name || 'Name'}`} placeholder="- Name" onCommit={(v) => updateUniconsTestimonial(i, { name: String(v).replace(/^-+\s*/, '') })} />
                                     </blockquote>
                                 ))}
                             </div>
@@ -1780,7 +1984,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-orange-100 border-l-4 border-orange-600 p-4 rounded">
                                 <h4 className="font-bold text-orange-900">{c.name}</h4>
-                                <p className="text-orange-700">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-orange-200', 'text-orange-700')}</div>
                             </div>
                         ))}
                     </div>
@@ -1852,7 +2056,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-yellow-100 border-l-4 border-yellow-600 p-4 rounded">
                                 <h4 className="font-bold text-yellow-900">{c.name}</h4>
-                                <p className="text-yellow-700">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-yellow-200', 'text-yellow-700')}</div>
                             </div>
                         ))}
                     </div>
@@ -1905,7 +2109,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-purple-100 border-l-4 border-purple-600 p-4 rounded">
                                 <h4 className="font-bold text-purple-900">{c.name}</h4>
-                                <p className="text-purple-700">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-purple-200', 'text-purple-700')}</div>
                             </div>
                         ))}
                     </div>
@@ -1958,7 +2162,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-cyan-100 border-l-4 border-cyan-600 p-4 rounded">
                                 <h4 className="font-bold text-cyan-900">{c.name}</h4>
-                                <p className="text-cyan-700">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-cyan-200', 'text-cyan-700')}</div>
                             </div>
                         ))}
                     </div>
@@ -2006,7 +2210,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-purple-100 border-l-4 border-purple-600 p-4 rounded">
                                 <h4 className="font-bold text-purple-900">{c.name}</h4>
-                                <p className="text-purple-700">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-purple-200', 'text-purple-700')}</div>
                             </div>
                         ))}
                     </div>
@@ -2054,7 +2258,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         {certifications.map((c, i) => (
                             <div key={i} className="bg-cyan-100 border-l-4 border-cyan-600 p-4 rounded">
                                 <h4 className="font-bold text-cyan-900">{c.name}</h4>
-                                <p className="text-cyan-700">{c.issuer}</p>
+                                <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-cyan-200', 'text-cyan-700')}</div>
                             </div>
                         ))}
                     </div>
@@ -2151,7 +2355,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                             {certifications.map((c, i) => (
                                 <div key={i} className="border-b border-[#e4d9c8] pb-2">
                                     <p className="font-semibold text-[#2d241c]">{c.name}</p>
-                                    <p className="text-sm text-[#5d5144]">{c.issuer}</p>
+                                    <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-[#c9b8a4]', 'text-sm text-[#5d5144]')}</div>
                                 </div>
                             ))}
                         </div>
@@ -2237,7 +2441,7 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                                     {certifications.map((c, i) => (
                                         <div key={i}>
                                             <p className="text-[#f0ebe3]">{c.name}</p>
-                                            <p className="text-sm text-[#9ea8b5]">{c.issuer}</p>
+                                            <div className="mt-2">{renderCertificationContent(c, 'h-16 w-16 rounded-lg object-cover border border-[#3a4556]', 'text-sm text-[#9ea8b5]')}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -2289,13 +2493,54 @@ const PortfolioView = ({ portfolioOverride = null, editable = false, onPortfolio
                         <h2 className="text-2xl font-bold uppercase mb-6 flex items-center gap-3">
                             <span className="w-8 h-1 bg-black"></span> Awards
                         </h2>
-                        <ul className="list-disc pl-5 space-y-2">
+                        {isEditable && (
+                            <div className="mb-4">
+                                <button
+                                    type="button"
+                                    onClick={addCertificationGlobal}
+                                    className="px-3 py-1 rounded-lg border border-slate-300 bg-white text-sm font-medium hover:bg-slate-50 transition"
+                                >
+                                    + Certification
+                                </button>
+                            </div>
+                        )}
+                        <div className="space-y-3">
                             {certifications.map((c, i) => (
-                                <li key={i}>
-                                    <span className="font-bold">{c.name}</span> - {c.issuer}
-                                </li>
+                                <div key={i} className="border border-slate-200 rounded-lg p-4 bg-white">
+                                    <EditableText
+                                        as="div"
+                                        className="font-bold"
+                                        value={c.name}
+                                        placeholder={`Certification ${i + 1}`}
+                                        onCommit={(v) => updateCertificationItem(i, 'name', v)}
+                                    />
+                                    <EditableText
+                                        as="div"
+                                        className="text-slate-600 mt-1"
+                                        value={c.issuer || ''}
+                                        placeholder="Issuer"
+                                        onCommit={(v) => updateCertificationItem(i, 'issuer', v)}
+                                    />
+                                    {isEditable && (
+                                        <div className="mt-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => onPortfolioChange((prev) => ({
+                                                    ...prev,
+                                                    certifications: (Array.isArray(prev.certifications) ? prev.certifications : []).filter((_, idx) => idx !== i),
+                                                }))}
+                                                className="text-xs text-red-600 hover:text-red-700"
+                                            >
+                                                Remove certification
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             ))}
-                        </ul>
+                            {isEditable && certifications.length === 0 && (
+                                <div className="text-sm text-slate-500">Add a certification to start editing.</div>
+                            )}
+                        </div>
                     </section>
                 </div>
                 <Footer />
@@ -2571,11 +2816,7 @@ const BtechBedimcode1Template = ({ portfolio, about, skills, projects, exportMod
                                         <div className="h-36 bg-gradient-to-br from-cyan-500/25 via-white/5 to-blue-500/25 relative">
                                             {img ? (
                                                 <img src={img} alt={p?.title || `Project ${idx + 1}`} className="w-full h-full object-cover" />
-                                            ) : (
-                                                <div className="absolute inset-0 flex items-center justify-center text-white/60 text-sm">
-                                                    Add image URL (optional)
-                                                </div>
-                                            )}
+                                            ) : null}
                                         </div>
                                         <div className="p-5">
                                             <h3 className="font-bold text-white/90">{p?.title || `Project ${idx + 1}`}</h3>
@@ -3046,11 +3287,7 @@ const BtechMechClassicTemplate = ({
                                     <div className="aspect-[4/3] bg-slate-100">
                                         {getProjectImage(project) ? (
                                             <img src={getProjectImage(project)} alt={project.title || `Project ${index + 1}`} className="h-full w-full object-cover" />
-                                        ) : (
-                                            <div className="flex h-full items-center justify-center bg-gradient-to-br from-[#d9d8ff] to-white px-6 text-center text-slate-500">
-                                                Add a project image in the editor
-                                            </div>
-                                        )}
+                                        ) : null}
                                     </div>
                                     <div className="p-5">
                                         <EditableText
@@ -3127,7 +3364,7 @@ const BtechMechClassicTemplate = ({
                                 {certifications.map((item, index) => (
                                     <div key={`${item.name || 'cert'}-${index}`} className="rounded-2xl border border-slate-200 px-4 py-3">
                                         <div className="font-semibold text-slate-700">{item.name || `Certification ${index + 1}`}</div>
-                                        <div className="text-sm text-slate-500">{item.issuer || 'Issuer'}</div>
+                                        <div className="mt-2">{renderCertificationContent(item, 'h-16 w-16 rounded-lg object-cover border border-slate-200', 'text-sm text-slate-500')}</div>
                                     </div>
                                 ))}
                             </div>
